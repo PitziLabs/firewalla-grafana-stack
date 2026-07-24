@@ -59,6 +59,15 @@ CI authenticates to Grafana via the `GRAFANA_URL` / `GRAFANA_AUTH` repo secrets,
 privilege: this state key + the lock table only). The `apply` job uses a `terraform-apply`
 concurrency group so two quick merges serialize instead of racing.
 
+The site-probe alerting in [`alerts.tf`](alerts.tf) adds one more required input:
+`TF_VAR_alert_email` — the recipient address for the site-probe alert contact point. It is a
+**repo secret** (not committed: drosera is a public repo) exposed to the `plan` and `apply`
+jobs as an env var, exactly like the Grafana secrets. The `variable "alert_email"` has no
+default, so plan/apply fail loudly if it is unset. Two operational prerequisites: (1) add the
+`TF_VAR_alert_email` repo secret, and (2) the `GRAFANA_AUTH` service-account token must carry
+alert-rule write scope — a token scoped for dashboards only will fail the apply when it
+reaches the `grafana_rule_group` / `grafana_contact_point` resources.
+
 ## Adopting a new resource that already exists in Cloud
 
 1. Add an `import` block in `imports.tf`:
