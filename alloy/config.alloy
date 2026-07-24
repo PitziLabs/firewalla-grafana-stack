@@ -115,6 +115,11 @@ prometheus.exporter.blackbox "default" {
     address = "https://lentago.dev"
     module  = "http_2xx"
   }
+  target {
+    name    = "essexcrossingatmontserrat.com"
+    address = "https://essexcrossingatmontserrat.com"
+    module  = "http_2xx"
+  }
 }
 
 prometheus.scrape "blackbox" {

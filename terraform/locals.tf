@@ -145,6 +145,10 @@ locals {
       uid  = "site-lentago-dev"
       file = "site-lentago-dev.json"
     }
+    essexcrossingatmontserrat_com = {
+      uid  = "site-essexcrossingatmontserrat-com"
+      file = "site-essexcrossingatmontserrat-com.json"
+    }
   }
 
   sites_dashboard_json = {
