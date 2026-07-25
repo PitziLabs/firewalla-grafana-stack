@@ -18,6 +18,11 @@ variable "alert_email" {
   type        = string
   sensitive   = true
   description = "Recipient for site-probe alert notifications. Set via TF_VAR_alert_email; never committed (public repo)."
+
+  validation {
+    condition     = length(trimspace(var.alert_email)) > 0
+    error_message = "The TF_VAR_alert_email secret resolved to an empty string. GitHub Actions renders a MISSING repo secret as empty rather than failing, so 'no default' alone does not catch an unset secret — this check does."
+  }
 }
 
 # First contact point on the stack (the live audit in #156 found zero). Routing

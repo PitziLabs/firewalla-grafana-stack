@@ -62,11 +62,46 @@ concurrency group so two quick merges serialize instead of racing.
 The site-probe alerting in [`alerts.tf`](alerts.tf) adds one more required input:
 `TF_VAR_alert_email` — the recipient address for the site-probe alert contact point. It is a
 **repo secret** (not committed: drosera is a public repo) exposed to the `plan` and `apply`
-jobs as an env var, exactly like the Grafana secrets. The `variable "alert_email"` has no
-default, so plan/apply fail loudly if it is unset. Two operational prerequisites: (1) add the
+jobs as an env var, exactly like the Grafana secrets. Two operational prerequisites: (1) add the
 `TF_VAR_alert_email` repo secret, and (2) the `GRAFANA_AUTH` service-account token must carry
 alert-rule write scope — a token scoped for dashboards only will fail the apply when it
 reaches the `grafana_rule_group` / `grafana_contact_point` resources.
+
+The site traffic panels in [`datasources.tf`](datasources.tf) and
+[`plugins.tf`](plugins.tf) add two more, following the same repo-secret pattern:
+
+| Secret | Feeds | What it must be |
+|---|---|---|
+| `TF_VAR_AXIOM_API_TOKEN` | `TF_VAR_axiom_api_token` | An Axiom API token with **query** scope on the `cjp-solidago-alb` dataset. Backs `grafana_data_source.solidago_axiom`. |
+| `TF_VAR_GRAFANA_CLOUD_ACCESS_POLICY_TOKEN` | `TF_VAR_grafana_cloud_access_policy_token` | A Grafana **Cloud access policy** token with `stack-plugins:read`, `stack-plugins:write`, `stack-plugins:delete`. Backs `grafana_cloud_plugin_installation.axiom`. |
+
+**The Cloud token is not the same thing as `GRAFANA_AUTH`, and one cannot substitute for the
+other.** `GRAFANA_AUTH` is a *stack* service-account token: it manages dashboards, folders,
+datasources, and alert rules through the stack API. Installing a plugin is a *Grafana Cloud
+Portal* operation on a different API with its own auth, which is why `plugins.tf` declares an
+aliased `provider "grafana"` (`alias = "cloud"`) rather than reusing the default provider.
+Mint the Cloud token in the Grafana Cloud Portal under Access Policies, not in the stack's
+service-account UI.
+
+### Why these variables carry a `validation` block
+
+Every secret-backed variable here declares `validation { length(trimspace(...)) > 0 }`, and
+that is load-bearing rather than decorative.
+
+**"No default" does not catch an unset secret in CI.** GitHub Actions renders a reference to a
+missing repo secret as an **empty string**, not an error — so `TF_VAR_axiom_api_token=""`
+reaches Terraform as a perfectly valid value for a variable that has no default. The plan
+succeeds and the apply ships an empty credential. This was observed, not theorised: PR #173's
+plan passed cleanly at 01:10Z on 2026-07-25 with `Plan: 2 to add, 4 to change`, thirteen
+minutes before either new secret existed.
+
+The `validation` block is what actually fails the run, at plan time, with a message naming the
+secret. Add one to any future secret-backed variable in this repo.
+
+This is the same failure shape as lentago/solidago#143, where an unreplaced `PLACEHOLDER`
+value in Secrets Manager left the ECS log pipeline dead for 16 days: a credential that is
+present, well-formed to every system that touches it, and wrong. Prefer guards that assert a
+secret is *usable* over ones that merely assert it is *set*.
 
 ## Adopting a new resource that already exists in Cloud
 
