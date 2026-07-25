@@ -179,3 +179,183 @@ resource "grafana_rule_group" "site_probes" {
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# Ingest-absence alerts for the critical Loki streams (issue #150).
+#
+# WHY this is separate from the probe rules above: the failure class it catches
+# is *silent ingest death*, not site downtime. Every silent failure this quarter
+# was an ingest failure — a 3-day and a 9-day Loki outage (the 2026-07-10 incident
+# report) and a 16-day Axiom outage (solidago#143), all of which stayed green on
+# every existing safeguard. Nothing in the stack asked "is data still arriving?"
+# These rules do exactly that: for each stream, count the lines over a cadence-
+# appropriate window and alert when the count is zero OR the query returns no data.
+#
+# no_data_state = "Alerting" IS THE CRUX and is DELIBERATELY OPPOSITE to the probe
+# rules above (which use "NoData"). For an absence alert, "no data" is not an
+# ambiguous vantage-point failure — it is precisely the condition being watched
+# for. A stopped stream produces an *empty* Loki result (a range-vector selector
+# that matches no lines returns nothing, not a literal 0), so if NoData were
+# suppressed or merely surfaced as NoData, these rules would stay silent through
+# the very outage they exist to catch. The threshold on C (< 1) is the belt to
+# no_data_state's suspenders for the rare case the query does return 0.
+#
+# SELECTOR CAVEAT: select on `log_source` ALONE. Streams may carry
+# cluster="lentago-lab" (Fluent Bit / Alloy external_labels) while pre-2026-07-04
+# data carries cluster="homelab"; adding a `cluster` matcher risks a selector that
+# matches nothing and therefore never fires — the worst outcome for an absence rule.
+locals {
+  # Per-stream model, one entry per stream: adding a stream is a one-line change.
+  # `window` is the count_over_time lookback (sized to each stream's cadence);
+  # `from_seconds` is the rule's relative_time_range and must cover that window.
+  #
+  # firewalla_acl is the one stream the 2026-07-24 design comment on #150 flags as
+  # fragile for pure absence detection: it is event-driven (ACL alarms only emit on
+  # a matching blocked/allowed flow), so a legitimately quiet network can produce a
+  # real zero. The comment's principle — constant-volume streams (zeek_dns/zeek_conn)
+  # alert directly; a heartbeat is the robust mechanism for genuinely quiet streams —
+  # is honoured here two ways: (1) firewalla_acl gets a materially wider 2h window so
+  # a false zero is implausible on any active network, and (2) device_inventory needs
+  # no special handling because its hourly cron IS a heartbeat — a known-cadence
+  # emitter whose absence is unambiguous. A synthetic ACL-liveness heartbeat that
+  # would let firewalla_acl detect faster is the robust long-term fix and is out of
+  # scope for this Loki-only issue (see PR body).
+  loki_ingest_streams = [
+    {
+      key          = "zeek-dns"
+      stream       = "zeek_dns"
+      name         = "Ingest absence — zeek_dns"
+      window       = "30m"
+      from_seconds = 1800
+      summary      = "No zeek_dns log lines ingested in the last 30m. This is a constant, high-volume stream — a zero means the Firewalla Fluent Bit DNS shipper has stopped delivering to Cloud Loki."
+    },
+    {
+      key          = "zeek-conn"
+      stream       = "zeek_conn"
+      name         = "Ingest absence — zeek_conn"
+      window       = "30m"
+      from_seconds = 1800
+      summary      = "No zeek_conn log lines ingested in the last 30m. This is a constant, high-volume stream — a zero means the Firewalla Fluent Bit conn shipper has stopped delivering to Cloud Loki."
+    },
+    {
+      key          = "firewalla-acl"
+      stream       = "firewalla_acl"
+      name         = "Ingest absence — firewalla_acl"
+      window       = "2h"
+      from_seconds = 7200
+      summary      = "No firewalla_acl log lines ingested in the last 2h. This is a lower-volume, event-driven stream (ACL alarms); the 2h window is sized so a legitimately quiet network is unlikely to produce a false zero. A sustained gap indicates the ACL alarm shipper has stopped."
+    },
+    {
+      key          = "device-inventory"
+      stream       = "device_inventory"
+      name         = "Ingest absence — device_inventory"
+      window       = "3h"
+      from_seconds = 10800
+      summary      = "No device_inventory entries in the last 3h. This feed is an hourly cron via the central Alloy loki.source.api; a 3h gap means the publisher has missed ~2 runs and LAN name↔IP resolution is going stale."
+    },
+  ]
+}
+
+# One rule group in the Lentago Lab folder — these four streams are all
+# homelab-source feeds (Zeek/ACL from the Firewalla, device_inventory from the
+# lab Alloy), so they live alongside the lab dashboards, not under Sites.
+resource "grafana_rule_group" "loki_ingest_absence" {
+  name             = "Loki ingest absence"
+  folder_uid       = grafana_folder.lab.uid
+  interval_seconds = 60
+
+  dynamic "rule" {
+    for_each = { for r in local.loki_ingest_streams : r.key => r }
+
+    content {
+      name = rule.value.name
+      # 10m persistence guard so a single transient empty result / Loki hiccup
+      # does not page; negligible next to each stream's window.
+      for = "10m"
+
+      # See the block comment above: "no data" is the alerting condition here,
+      # NOT an ambiguous vantage-point failure. Getting this backwards produces
+      # rules that stay silent through the outage they exist to catch.
+      condition      = "C"
+      no_data_state  = "Alerting"
+      exec_err_state = "Error"
+
+      # A: sum(count_over_time({log_source="X"}[window])) against Cloud Loki.
+      # The Loki datasource UID is hardcoded exactly as the probe rules hardcode
+      # grafanacloud-prom — the datasource_uid_rewrites machinery in locals.tf
+      # rewrites dashboard JSON only, never alert rules.
+      data {
+        ref_id         = "A"
+        datasource_uid = "grafanacloud-logs"
+
+        relative_time_range {
+          from = rule.value.from_seconds
+          to   = 0
+        }
+
+        model = jsonencode({
+          refId         = "A"
+          expr          = "sum(count_over_time({log_source=\"${rule.value.stream}\"}[${rule.value.window}]))"
+          queryType     = "instant"
+          editorMode    = "code"
+          intervalMs    = 1000
+          maxDataPoints = 43200
+          datasource = {
+            type = "loki"
+            uid  = "grafanacloud-logs"
+          }
+        })
+      }
+
+      # C: fire when the reduced value of A is < 1 (i.e. exactly 0). The empty-
+      # result / stream-gone case never reaches this evaluator — it surfaces as
+      # NoData and is handled by no_data_state = "Alerting" above.
+      data {
+        ref_id         = "C"
+        datasource_uid = "__expr__"
+
+        relative_time_range {
+          from = 0
+          to   = 0
+        }
+
+        model = jsonencode({
+          refId = "C"
+          type  = "classic_conditions"
+          datasource = {
+            type = "__expr__"
+            uid  = "__expr__"
+          }
+          conditions = [{
+            type = "query"
+            evaluator = {
+              type   = "lt"
+              params = [1]
+            }
+            operator = { type = "and" }
+            query    = { params = ["A"] }
+            reducer  = { type = "last", params = [] }
+          }]
+        })
+      }
+
+      # Reuse the single existing contact point (issue #150 says do not add a
+      # second). Per-rule routing only — NOT the root notification policy.
+      # repeat_interval throttles re-notification so a deliberate quiet period
+      # (e.g. Firewalla maintenance) does not mail every evaluation cycle.
+      notification_settings {
+        contact_point   = grafana_contact_point.site_alerts_email.name
+        repeat_interval = "4h"
+      }
+
+      labels = {
+        service = "loki-ingest"
+        stream  = rule.value.stream
+      }
+
+      annotations = {
+        summary = rule.value.summary
+      }
+    }
+  }
+}
