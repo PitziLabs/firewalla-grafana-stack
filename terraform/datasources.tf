@@ -23,3 +23,31 @@ resource "grafana_data_source" "solidago_cloudwatch" {
     defaultRegion = "us-east-1"
   })
 }
+
+# Solidago Axiom: query-on-demand against the ALB access logs that lentago/betula
+# ships into the `cjp-solidago-alb` Axiom dataset (betula#87). This is the render
+# side of the capture-once boundary — drosera queries Axiom directly; nothing is
+# teed into Loki/Mimir. The signed `axiomhq-axiom-datasource` plugin must be
+# installed on the stack for this resource to apply (see terraform/README.md § CI).
+#
+# The API token is NEVER committed (drosera is a public repo). It is declared as a
+# sensitive variable with no default and passed by CI as TF_VAR_axiom_api_token —
+# the exact pattern alerts.tf uses for TF_VAR_alert_email. A missing value fails
+# the plan loudly rather than shipping an empty credential.
+variable "axiom_api_token" {
+  type        = string
+  sensitive   = true
+  description = "Axiom API token for the ALB-logs datasource. Set via TF_VAR_axiom_api_token; never committed (public repo)."
+}
+
+resource "grafana_data_source" "solidago_axiom" {
+  type = "axiomhq-axiom-datasource"
+  name = "Solidago Axiom"
+  uid  = "solidago-axiom"
+
+  # accessToken is the plugin's secureJsonData key; it is stored server-side by
+  # Grafana and never read back into state as plaintext.
+  secure_json_data_encoded = jsonencode({
+    accessToken = var.axiom_api_token
+  })
+}

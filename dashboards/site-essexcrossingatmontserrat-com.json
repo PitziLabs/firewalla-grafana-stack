@@ -17,7 +17,65 @@
   },
   "timepicker": {},
   "templating": {
-    "list": []
+    "list": [
+      {
+        "type": "constant",
+        "name": "axiom_dataset",
+        "query": "['cjp-solidago-alb']",
+        "current": {
+          "selected": false,
+          "text": "['cjp-solidago-alb']",
+          "value": "['cjp-solidago-alb']"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "['cjp-solidago-alb']",
+            "value": "['cjp-solidago-alb']"
+          }
+        ],
+        "hide": 2,
+        "skipUrlSync": true
+      },
+      {
+        "type": "constant",
+        "name": "site_domain",
+        "query": "essexcrossingatmontserrat.com",
+        "current": {
+          "selected": false,
+          "text": "essexcrossingatmontserrat.com",
+          "value": "essexcrossingatmontserrat.com"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "essexcrossingatmontserrat.com",
+            "value": "essexcrossingatmontserrat.com"
+          }
+        ],
+        "hide": 2,
+        "skipUrlSync": true
+      },
+      {
+        "type": "constant",
+        "name": "traffic_filter",
+        "query": "| where user_agent !startswith 'Blackbox' | where request_url !contains 'wp-login.php' and request_url !contains 'xmlrpc.php' and request_url !contains 'wlwmanifest.xml'",
+        "current": {
+          "selected": false,
+          "text": "| where user_agent !startswith 'Blackbox' | where request_url !contains 'wp-login.php' and request_url !contains 'xmlrpc.php' and request_url !contains 'wlwmanifest.xml'",
+          "value": "| where user_agent !startswith 'Blackbox' | where request_url !contains 'wp-login.php' and request_url !contains 'xmlrpc.php' and request_url !contains 'wlwmanifest.xml'"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "| where user_agent !startswith 'Blackbox' | where request_url !contains 'wp-login.php' and request_url !contains 'xmlrpc.php' and request_url !contains 'wlwmanifest.xml'",
+            "value": "| where user_agent !startswith 'Blackbox' | where request_url !contains 'wp-login.php' and request_url !contains 'xmlrpc.php' and request_url !contains 'wlwmanifest.xml'"
+          }
+        ],
+        "hide": 2,
+        "skipUrlSync": true
+      }
+    ]
   },
   "annotations": {
     "list": []
@@ -774,6 +832,425 @@
           "id": "",
           "label": "Memory",
           "alias": ""
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "collapsed": false,
+      "title": "Traffic — Axiom (query-on-demand; blackbox probe + WP-scanner noise excluded)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Requests (range total)",
+      "description": "Real requests in the selected range. Drosera's own Blackbox probe (~72% of raw traffic on quiet sites) and opportunistic WordPress scanner paths are both excluded via the $traffic_filter dashboard variable.",
+      "datasource": {
+        "type": "axiomhq-axiom-datasource",
+        "uid": "solidago-axiom"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "colorMode": "none",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "axiomhq-axiom-datasource",
+            "uid": "solidago-axiom"
+          },
+          "refId": "A",
+          "apl": "${axiom_dataset} | where domain_name == '${site_domain}' ${traffic_filter} | summarize requests = count()"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Unique visitors (approx.)",
+      "description": "APPROXIMATE distinct visitors, counted by client_ip (dcount is an HLL estimate; shared/NAT IPs undercount). ALB logs carry no referer and no session identity, so true uniques are not knowable from this data.",
+      "datasource": {
+        "type": "axiomhq-axiom-datasource",
+        "uid": "solidago-axiom"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "colorMode": "none",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "axiomhq-axiom-datasource",
+            "uid": "solidago-axiom"
+          },
+          "refId": "A",
+          "apl": "${axiom_dataset} | where domain_name == '${site_domain}' ${traffic_filter} | summarize visitors = dcount(client_ip)"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Scanner hits (security — excluded from traffic)",
+      "description": "Opportunistic WordPress vuln scans (wp-login.php / xmlrpc.php / wlwmanifest.xml). Harmless against the static nginx container, but deliberately excluded from every traffic panel so it cannot inflate counts. The probe is still excluded here.",
+      "datasource": {
+        "type": "axiomhq-axiom-datasource",
+        "uid": "solidago-axiom"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "colorMode": "none",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "axiomhq-axiom-datasource",
+            "uid": "solidago-axiom"
+          },
+          "refId": "A",
+          "apl": "${axiom_dataset} | where domain_name == '${site_domain}' | where user_agent !startswith 'Blackbox' | where request_url contains 'wp-login.php' or request_url contains 'xmlrpc.php' or request_url contains 'wlwmanifest.xml' | summarize hits = count()"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Requests over time",
+      "description": "Real request volume over time (probe + scanner excluded). Volume is low (~1k req/day/site) — expect a sparse line, not a firehose.",
+      "datasource": {
+        "type": "axiomhq-axiom-datasource",
+        "uid": "solidago-axiom"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "axiomhq-axiom-datasource",
+            "uid": "solidago-axiom"
+          },
+          "refId": "A",
+          "apl": "${axiom_dataset} | where domain_name == '${site_domain}' ${traffic_filter} | summarize requests = count() by bin_auto(_time)"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Status codes",
+      "description": "ELB status codes over time (probe + scanner excluded). One series per elb_status_code.",
+      "datasource": {
+        "type": "axiomhq-axiom-datasource",
+        "uid": "solidago-axiom"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 33
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "axiomhq-axiom-datasource",
+            "uid": "solidago-axiom"
+          },
+          "refId": "A",
+          "apl": "${axiom_dataset} | where domain_name == '${site_domain}' ${traffic_filter} | summarize requests = count() by bin_auto(_time), elb_status_code"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Top request URLs",
+      "description": "Most-requested URLs (probe + scanner excluded). request_url is the full ALB URL including scheme/host; there is no separate path field.",
+      "datasource": {
+        "type": "axiomhq-axiom-datasource",
+        "uid": "solidago-axiom"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "requests",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "axiomhq-axiom-datasource",
+            "uid": "solidago-axiom"
+          },
+          "refId": "A",
+          "apl": "${axiom_dataset} | where domain_name == '${site_domain}' ${traffic_filter} | summarize requests = count() by request_url | sort by requests desc | limit 20"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "table",
+      "title": "Top user agents",
+      "description": "Most common user agents (probe + scanner excluded).",
+      "datasource": {
+        "type": "axiomhq-axiom-datasource",
+        "uid": "solidago-axiom"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "requests",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "axiomhq-axiom-datasource",
+            "uid": "solidago-axiom"
+          },
+          "refId": "A",
+          "apl": "${axiom_dataset} | where domain_name == '${site_domain}' ${traffic_filter} | summarize requests = count() by user_agent | sort by requests desc | limit 20"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Scanner activity (security)",
+      "description": "Scanner probe volume over time — surfaced separately so it is visible without polluting the traffic panels above. Probe excluded; scanner paths INCLUDED here.",
+      "datasource": {
+        "type": "axiomhq-axiom-datasource",
+        "uid": "solidago-axiom"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "axiomhq-axiom-datasource",
+            "uid": "solidago-axiom"
+          },
+          "refId": "A",
+          "apl": "${axiom_dataset} | where domain_name == '${site_domain}' | where user_agent !startswith 'Blackbox' | where request_url contains 'wp-login.php' or request_url contains 'xmlrpc.php' or request_url contains 'wlwmanifest.xml' | summarize hits = count() by bin_auto(_time)"
         }
       ]
     }

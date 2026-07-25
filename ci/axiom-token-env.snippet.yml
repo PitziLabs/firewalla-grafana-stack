@@ -1,0 +1,37 @@
+# ci/axiom-token-env.snippet.yml
+#
+# NOT auto-applied. The fleet runner that opens drosera PRs lacks the GitHub
+# `workflows` permission, so it cannot edit `.github/workflows/terraform.yml`.
+# A human with that permission must apply the edit below. Precedent: PR #172 did
+# exactly this for TF_VAR_alert_email and it worked.
+#
+# WHAT TO DO
+# ----------
+# 1. Add the `TF_VAR_AXIOM_API_TOKEN` repo secret (an Axiom API token, `xaat-…`,
+#    scoped to read the `cjp-solidago-alb` dataset). Without it the plan/apply
+#    fail loudly — `variable "axiom_api_token"` in terraform/datasources.tf has
+#    no default, on purpose (drosera is a public repo).
+# 2. Add the one `TF_VAR_axiom_api_token:` line shown below to the `env:` block of
+#    BOTH the `plan` and `apply` jobs in .github/workflows/terraform.yml, right
+#    beside the existing TF_VAR_alert_email line.
+# 3. Ensure the `axiomhq-axiom-datasource` plugin is installed on the Grafana
+#    Cloud stack before the first apply, or the datasource resource errors.
+#
+# The `plan` job env: block should read (added line marked ▶):
+#
+#     env:
+#       GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+#       GRAFANA_AUTH: ${{ secrets.GRAFANA_AUTH }}
+#       TF_VAR_alert_email: ${{ secrets.TF_VAR_ALERT_EMAIL }}
+# ▶     TF_VAR_axiom_api_token: ${{ secrets.TF_VAR_AXIOM_API_TOKEN }}
+#
+# The `apply` job env: block should read (added line marked ▶):
+#
+#     env:
+#       GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+#       GRAFANA_AUTH: ${{ secrets.GRAFANA_AUTH }}
+#       TF_VAR_alert_email: ${{ secrets.TF_VAR_ALERT_EMAIL }}
+# ▶     TF_VAR_axiom_api_token: ${{ secrets.TF_VAR_AXIOM_API_TOKEN }}
+#
+# The exact line to add to each env: block:
+TF_VAR_axiom_api_token: ${{ secrets.TF_VAR_AXIOM_API_TOKEN }}
