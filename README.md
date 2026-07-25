@@ -4,8 +4,10 @@
 
 **Drosera** (sundew — the botanical codename line alongside `lentago`,
 `solidago`, and `kalmia`) is the Lentago Labs observability suite. Today it
-watches the Lentago lab; it will shortly extend to receive AWS telemetry from the
-Lentago cloud estate. Renamed from `homelab-observability` on 2026-07-04 —
+watches the Lentago lab and renders AWS telemetry from the Lentago cloud
+estate (Solidago) on demand via a live CloudWatch datasource; deeper AWS
+ingestion is the next scope expansion. Renamed from `homelab-observability` on
+2026-07-04 —
 AWS-side resource names (the OIDC CI role, the Terraform state key) keep the
 old prefix, as do the live `/opt/homelab-observability` checkouts on hosts.
 
@@ -15,16 +17,22 @@ old prefix, as do the live `/opt/homelab-observability` checkouts on hosts.
 
 Git-driven observability for a Firewalla home network, powered by [Grafana
 Cloud](https://grafana.com/products/cloud/) (free tier) on the visualization
-side and a single [Grafana Alloy](https://grafana.com/docs/alloy/) container on
-the ingestion side.
+side. Ingestion is per-host, not a single chokepoint: each host runs its own
+[Grafana Alloy](https://grafana.com/docs/alloy/) agent and pushes metrics
+straight to Cloud (`remote_write`, 15s); a central Alloy on the LXC covers
+what's left over — blackbox probes, the Home Assistant scrape, and one Loki
+receiver (see [Architecture](#architecture) below).
 
 Everything is declarative:
 
 - Dashboards live as JSON in [`dashboards/`](dashboards/).
-- Cloud-side resources (the `Lentago` folder, dashboards, alert rules) are managed by
-  [Terraform](terraform/) with the [`grafana/grafana`](https://registry.terraform.io/providers/grafana/grafana/latest) provider.
-- LXC-side ingestion is a single declarative [`alloy/config.alloy`](alloy/config.alloy)
-  spun up by `docker compose`.
+- Cloud-side resources (the `Lentago` folder, dashboards, datasources, alert
+  rules, contact points) are managed by [Terraform](terraform/) with the
+  [`grafana/grafana`](https://registry.terraform.io/providers/grafana/grafana/latest) provider.
+- Central (LXC) ingestion is a single declarative
+  [`alloy/config.alloy`](alloy/config.alloy) spun up by `docker compose`;
+  per-host push agents run from the config embedded in
+  [`scripts/deploy-alloy.sh`](scripts/deploy-alloy.sh).
 
 ## Architecture
 
@@ -83,6 +91,35 @@ betula side first (the Fluent Bit container, its Loki output config, box
 network egress) — the central Alloy on LXC 105 no longer relays this traffic,
 so it's not a suspect for these four streams. It remains the right place to
 look for `device_inventory` gaps (below) and for the metrics pipeline.
+
+## Alerting
+
+Terraform provisions the stack's alerting end to end —
+[`terraform/alerts.tf`](terraform/alerts.tf): **12 rules** across two rule
+groups in the `Lentago` folder, plus the stack's first contact point. See
+[docs/adr/0001-grafana-native-alerting-for-site-probes.md](docs/adr/0001-grafana-native-alerting-for-site-probes.md)
+for why this lives in Grafana instead of AWS.
+
+- **`Site probe alerts`** (8 rules — "Site down" on `probe_success` and "TLS
+  cert expiring" on `probe_ssl_earliest_cert_expiry` under a 21-day threshold,
+  for each of the 4 site dashboards). These metrics come from the lab Alloy's
+  blackbox exporter and exist nowhere in CloudWatch, so Solidago's AWS-native
+  alerting (CloudWatch alarms → SNS, solidago ADR-0001) can't see them.
+  `no_data_state = "NoData"` deliberately: the probes run from one lab vantage
+  point, so a lab/WAN outage looks identical to a real site outage, and
+  alerting on NoData would misfire on every lab hiccup instead of a real one.
+- **`Loki ingest absence`** (4 rules — one each for `zeek_dns`, `zeek_conn`,
+  `firewalla_acl`, `device_inventory`): fires when a stream goes quiet longer
+  than its expected cadence (30m for the two high-volume Zeek streams, 2h for
+  the event-driven ACL stream, 3h for the hourly device-inventory cron).
+  `no_data_state = "Alerting"` here — the opposite of the probe rules — because
+  an empty Loki result *is* the failure this group exists to catch, not an
+  ambiguous vantage-point gap.
+- **Contact point:** one email contact point (`Site probe email`). The
+  recipient is `TF_VAR_alert_email`, a sensitive Terraform variable with no
+  default, supplied via CI/`.envrc` and never committed (this is a public
+  repo). Routing is scoped per-rule, so it doesn't touch the stack's root
+  notification policy.
 
 ## Solidago (AWS) contract
 
@@ -147,7 +184,9 @@ dashboards/                    # source of truth for Grafana dashboard JSON
   solidago-platform-health.json # Solidago (AWS) via the CloudWatch datasource
   site-*.json                  # per-site health (Mimir probes + per-TG/service CloudWatch)
 terraform/                     # manages Cloud-side resources
-  *.tf                         # incl. datasources.tf — the solidago-cloudwatch datasource
+  *.tf                         # incl. datasources.tf (solidago-cloudwatch) and
+                                # alerts.tf (site probe + Loki ingest-absence alert rules)
+docs/adr/                      # architecture decision records (e.g. native alerting for site probes)
 scripts/
   inventory-cloud.sh           # snapshot current state of lentago.grafana.net
   deploy-node-exporter.sh      # install node_exporter on a host
