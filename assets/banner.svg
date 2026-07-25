@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="300" viewBox="0 0 1280 300" role="img" aria-label="lentago labs — drosera: Observability suite · git-driven, no chokepoint">
+  <defs>
+    <linearGradient id="hero" x1="0.08" y1="0" x2="0.86" y2="1">
+      <stop offset="0" stop-color="#0e2b1a"></stop>
+      <stop offset="1" stop-color="#1b4b2e"></stop>
+    </linearGradient>
+    <clipPath id="frame"><rect width="1280" height="300"></rect></clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="1280" height="300" fill="url(#hero)"></rect>
+
+    <!-- Topographic contour lines, hugging the corner under the watermark -->
+    <g transform="translate(858,214) scale(1.0)" fill="none" stroke="#E0A81C" stroke-width="1.5">
+      <path d="M0 100 C 120 -10, 260 -10, 400 70" stroke-opacity="0.10"></path>
+      <path d="M0 80 C 130 -45, 270 -45, 420 40" stroke-opacity="0.12"></path>
+      <path d="M10 62 C 145 -78, 280 -78, 435 12" stroke-opacity="0.14"></path>
+      <path d="M25 46 C 160 -110, 290 -110, 448 -14" stroke-opacity="0.11"></path>
+    </g>
+
+    <!-- Genus watermark, bleeding off the right edge -->
+    <g transform="translate(896,-46) scale(6)" opacity="0.085">
+<g transform="rotate(0 32 32)"><path d="M32 30L32 21" stroke="#f3f0e8" stroke-width="2.2" stroke-linecap="round"></path><ellipse cx="32" cy="14" rx="5.5" ry="7" stroke="#f3f0e8" stroke-width="2.2"></ellipse><circle cx="32" cy="4.5" r="1.5" fill="#E0A81C"></circle><circle cx="25.6" cy="9" r="1.5" fill="#E0A81C"></circle><circle cx="38.4" cy="9" r="1.5" fill="#E0A81C"></circle></g>
+  <g transform="rotate(72 32 32)"><path d="M32 30L32 21" stroke="#f3f0e8" stroke-width="2.2" stroke-linecap="round"></path><ellipse cx="32" cy="14" rx="5.5" ry="7" stroke="#f3f0e8" stroke-width="2.2"></ellipse><circle cx="32" cy="4.5" r="1.5" fill="#E0A81C"></circle><circle cx="25.6" cy="9" r="1.5" fill="#E0A81C"></circle><circle cx="38.4" cy="9" r="1.5" fill="#E0A81C"></circle></g>
+  <g transform="rotate(144 32 32)"><path d="M32 30L32 21" stroke="#f3f0e8" stroke-width="2.2" stroke-linecap="round"></path><ellipse cx="32" cy="14" rx="5.5" ry="7" stroke="#f3f0e8" stroke-width="2.2"></ellipse><circle cx="32" cy="4.5" r="1.5" fill="#E0A81C"></circle><circle cx="25.6" cy="9" r="1.5" fill="#E0A81C"></circle><circle cx="38.4" cy="9" r="1.5" fill="#E0A81C"></circle></g>
+  <g transform="rotate(216 32 32)"><path d="M32 30L32 21" stroke="#f3f0e8" stroke-width="2.2" stroke-linecap="round"></path><ellipse cx="32" cy="14" rx="5.5" ry="7" stroke="#f3f0e8" stroke-width="2.2"></ellipse><circle cx="32" cy="4.5" r="1.5" fill="#E0A81C"></circle><circle cx="25.6" cy="9" r="1.5" fill="#E0A81C"></circle><circle cx="38.4" cy="9" r="1.5" fill="#E0A81C"></circle></g>
+  <g transform="rotate(288 32 32)"><path d="M32 30L32 21" stroke="#f3f0e8" stroke-width="2.2" stroke-linecap="round"></path><ellipse cx="32" cy="14" rx="5.5" ry="7" stroke="#f3f0e8" stroke-width="2.2"></ellipse><circle cx="32" cy="4.5" r="1.5" fill="#E0A81C"></circle><circle cx="25.6" cy="9" r="1.5" fill="#E0A81C"></circle><circle cx="38.4" cy="9" r="1.5" fill="#E0A81C"></circle></g>
+  <circle cx="32" cy="32" r="4.4" fill="#0e2b1a" stroke="#f3f0e8" stroke-width="1.4"></circle>
+    </g>
+
+    <!-- Eyebrow: gold diamond + category -->
+    <text x="80" y="84" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" letter-spacing="4.5"><tspan fill="#E0A81C">◆</tspan><tspan fill="#9fb0aa">  LENTAGO LABS · SUITE</tspan></text>
+
+    <!-- Genus mark chip -->
+    <g transform="translate(80,110) scale(1.25)">
+<rect width="64" height="64" rx="12" ry="12" fill="#0e2b1a"></rect>
+  <g transform="rotate(0 32 32)"><path d="M32 30L32 21" stroke="#f3f0e8" stroke-width="2.2" stroke-linecap="round"></path><ellipse cx="32" cy="14" rx="5.5" ry="7" stroke="#f3f0e8" stroke-width="2.2"></ellipse><circle cx="32" cy="4.5" r="1.5" fill="#E0A81C"></circle><circle cx="25.6" cy="9" r="1.5" fill="#E0A81C"></circle><circle cx="38.4" cy="9" r="1.5" fill="#E0A81C"></circle></g>
+  <g transform="rotate(72 32 32)"><path d="M32 30L32 21" stroke="#f3f0e8" stroke-width="2.2" stroke-linecap="round"></path><ellipse cx="32" cy="14" rx="5.5" ry="7" stroke="#f3f0e8" stroke-width="2.2"></ellipse><circle cx="32" cy="4.5" r="1.5" fill="#E0A81C"></circle><circle cx="25.6" cy="9" r="1.5" fill="#E0A81C"></circle><circle cx="38.4" cy="9" r="1.5" fill="#E0A81C"></circle></g>
+  <g transform="rotate(144 32 32)"><path d="M32 30L32 21" stroke="#f3f0e8" stroke-width="2.2" stroke-linecap="round"></path><ellipse cx="32" cy="14" rx="5.5" ry="7" stroke="#f3f0e8" stroke-width="2.2"></ellipse><circle cx="32" cy="4.5" r="1.5" fill="#E0A81C"></circle><circle cx="25.6" cy="9" r="1.5" fill="#E0A81C"></circle><circle cx="38.4" cy="9" r="1.5" fill="#E0A81C"></circle></g>
+  <g transform="rotate(216 32 32)"><path d="M32 30L32 21" stroke="#f3f0e8" stroke-width="2.2" stroke-linecap="round"></path><ellipse cx="32" cy="14" rx="5.5" ry="7" stroke="#f3f0e8" stroke-width="2.2"></ellipse><circle cx="32" cy="4.5" r="1.5" fill="#E0A81C"></circle><circle cx="25.6" cy="9" r="1.5" fill="#E0A81C"></circle><circle cx="38.4" cy="9" r="1.5" fill="#E0A81C"></circle></g>
+  <g transform="rotate(288 32 32)"><path d="M32 30L32 21" stroke="#f3f0e8" stroke-width="2.2" stroke-linecap="round"></path><ellipse cx="32" cy="14" rx="5.5" ry="7" stroke="#f3f0e8" stroke-width="2.2"></ellipse><circle cx="32" cy="4.5" r="1.5" fill="#E0A81C"></circle><circle cx="25.6" cy="9" r="1.5" fill="#E0A81C"></circle><circle cx="38.4" cy="9" r="1.5" fill="#E0A81C"></circle></g>
+  <circle cx="32" cy="32" r="4.4" fill="#0e2b1a" stroke="#f3f0e8" stroke-width="1.4"></circle>
+    </g>
+
+    <text x="184" y="158" font-family="'Space Grotesk', system-ui, -apple-system, Segoe UI, sans-serif" font-weight="700" font-size="48" fill="#f3f0e8" letter-spacing="-1.6">drosera</text>
+    <text x="186" y="186" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#cdd6d0" letter-spacing="1.6">OBSERVABILITY SUITE · GIT-DRIVEN, NO CHOKEPOINT</text>
+
+    <!-- Field prompt: triangulation marker, never $ or > -->
+    <text x="80" y="250" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14"><tspan fill="#E0A81C">▲</tspan><tspan fill="#9fb0aa"> lentago</tspan><tspan fill="#748983">  alloy push  ·  mimir · loki · grafana cloud</tspan></text>
+
+    <rect x="0" y="296" width="1280" height="4" fill="#E0A81C"></rect>
+  </g>
+</svg>
