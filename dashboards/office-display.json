@@ -1,6 +1,6 @@
 {
   "uid": "firewalla-office-display",
-  "title": "Office Display",
+  "title": "Lentago Lab — Office Display",
   "description": "Kiosk-optimized wall display: device status, host health, network activity, DNS and blocked connections",
   "tags": [
     "firewalla",

@@ -21,7 +21,7 @@ the ingestion side.
 Everything is declarative:
 
 - Dashboards live as JSON in [`dashboards/`](dashboards/).
-- Cloud-side resources (folders, dashboards, future alerts) are managed by
+- Cloud-side resources (the `Lentago` folder, dashboards, alert rules) are managed by
   [Terraform](terraform/) with the [`grafana/grafana`](https://registry.terraform.io/providers/grafana/grafana/latest) provider.
 - LXC-side ingestion is a single declarative [`alloy/config.alloy`](alloy/config.alloy)
   spun up by `docker compose`.
@@ -91,10 +91,12 @@ CloudWatch datasource** — nothing is streamed or imported into Mimir, so it
 consumes zero free-tier active series. Queries bill as CloudWatch
 `GetMetricData` at render time; the dashboard refresh floor is **1m**.
 
-- **This repo owns:** the `Solidago` folder, the `solidago-cloudwatch`
-  datasource (`terraform/datasources.tf`, "Grafana Assume Role" auth), and
-  Solidago dashboards (`dashboards/solidago-platform-health.json`).
-- **Per-site dashboards** live in the sibling `Sites` folder
+- **This repo owns:** the `solidago-cloudwatch` datasource
+  (`terraform/datasources.tf`, "Grafana Assume Role" auth) and the Solidago
+  dashboards (`dashboards/solidago-platform-health.json`, titled
+  `Solidago — Platform Health`).
+- **Per-site dashboards** sit in the same flat `Lentago` folder, titled
+  `Sites — <domain>`
   (`dashboards/site-*.json`, uid = site repo name): outside-in blackbox
   probes (Mimir) on top, per-TargetGroup / per-ECS-service CloudWatch below.
   ALB panels use SEARCH expressions on stable name fragments — TargetGroup
@@ -181,7 +183,7 @@ direnv allow
 ```bash
 cd terraform
 terraform init
-terraform plan           # should show: import folder + 5 dashboards, then update them
+terraform plan           # should show: import the Lentago folder + 5 dashboards, then update them
 terraform apply
 ```
 
@@ -227,8 +229,8 @@ After Alloy is up:
 - Confirm logs arrive in Cloud: **Explore → grafanacloud-lentago-logs** → `{cluster="lentago-lab"}`.
 - Confirm metrics arrive: **Explore → grafanacloud-lentago-prom** →
   `up{cluster="lentago-lab"}` should return 1 for each scrape target.
-- Visit a dashboard (e.g. **Firewalla / Network Overview**) and confirm panels
-  render data.
+- Visit a dashboard (e.g. **Lentago / Lentago Lab — Network Overview**) and
+  confirm panels render data.
 
 ### 5. Office display (kiosk)
 
@@ -272,10 +274,14 @@ comment) on every PR touching `terraform/**` or `dashboards/**`, and **`apply
 
 ### Add a new dashboard
 
-1. Drop a new JSON file in `dashboards/`.
-2. Add an entry to the matching per-folder local (`lab_dashboards`,
+1. Drop a new JSON file in `dashboards/`. Title it `<Group> — <What>`
+   (`Lentago Lab — …`, `Claytonia — …`, `Solidago — …`, `Sites — <domain>`):
+   every dashboard lives in one flat `Lentago` folder, so the title prefix is
+   the only thing that groups the list.
+2. Add an entry to the matching per-group local (`lab_dashboards`,
    `claytonia_dashboards`, `solidago_dashboards`, or `sites_dashboards`) in
-   [`terraform/locals.tf`](terraform/locals.tf).
+   [`terraform/locals.tf`](terraform/locals.tf). These maps differ in how the
+   JSON is pre-processed, not in where the dashboard lands.
 3. Open a PR; merging to `main` applies it (or `terraform apply` locally).
 
 ### Add new scrape targets / new log sources

@@ -122,6 +122,6 @@ secret is *usable* over ones that merely assert it is *set*.
 ## Creating a new dashboard from scratch
 
 1. Drop a JSON file in `../dashboards/`.
-2. Add an entry to the matching per-folder map (`lab_dashboards`, `claytonia_dashboards`, `solidago_dashboards`, or `sites_dashboards`) in [`locals.tf`](locals.tf) (the `grafana_dashboard` resources use `for_each` over those maps in [`dashboards.tf`](dashboards.tf)).
+2. Add an entry to the matching per-group map (`lab_dashboards`, `claytonia_dashboards`, `solidago_dashboards`, or `sites_dashboards`) in [`locals.tf`](locals.tf) (the `grafana_dashboard` resources use `for_each` over those maps in [`dashboards.tf`](dashboards.tf)). All four land in the single `Lentago` folder — the maps survive because they differ in JSON pre-processing, not placement. Give the dashboard a `<Group> — <What>` title so it clusters in the flat list.
 3. Add a matching `import` block in [`imports.tf`](imports.tf) if the dashboard was already created in the UI (otherwise Terraform creates it on first apply).
 4. `terraform apply`.

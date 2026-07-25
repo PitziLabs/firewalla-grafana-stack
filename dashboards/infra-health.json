@@ -1577,7 +1577,7 @@
     ]
   },
   "timezone": "browser",
-  "title": "Infrastructure Health",
+  "title": "Lentago Lab — Infrastructure Health",
   "uid": "firewalla-infra-health",
   "weekStart": ""
 }

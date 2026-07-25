@@ -1,6 +1,6 @@
 {
   "uid": "firewalla-network-overview",
-  "title": "Network Overview",
+  "title": "Lentago Lab — Network Overview",
   "description": "Pipeline health, log volume, and top talkers across all Firewalla data sources",
   "tags": ["firewalla", "overview"],
   "timezone": "browser",

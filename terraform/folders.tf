@@ -1,27 +1,16 @@
-# Folder taxonomy follows the Lentago product lines: one folder per product
-# (Claytonia, Solidago), Sites for the per-site dashboards, and Lentago Lab
-# for the homelab source itself — the lab is drosera's first *client*, not a
-# product. The lab folder keeps its wizard-imported uid; renaming a folder uid
-# would destroy/recreate it and orphan every dashboard link into it.
-
-resource "grafana_folder" "lab" {
-  title = "Lentago Lab"
+# One flat folder holds every drosera-owned dashboard. The per-product folder
+# taxonomy (Claytonia / Solidago / Sites / Lentago Lab) was collapsed on
+# 2026-07-24: with twelve dashboards the folder tree cost a click on every
+# navigation and bought nothing a title prefix can't express. Grouping now lives
+# in the dashboard title (`<Group> — <What>`), which sorts the flat list into the
+# same clusters the folders used to draw. See CLAUDE.md § Key conventions.
+#
+# The uid is the wizard-imported one from the original Firewalla folder: a folder
+# uid change is a destroy/create, and destroying a folder takes its dashboards
+# with it. Retitling in place is free, so the opaque uid stays.
+resource "grafana_folder" "lentago" {
+  title = "Lentago"
   uid   = "afh7m8li40zk0d"
-}
-
-resource "grafana_folder" "claytonia" {
-  title = "Claytonia"
-  uid   = "claytonia"
-}
-
-resource "grafana_folder" "solidago" {
-  title = "Solidago"
-  uid   = "solidago"
-}
-
-resource "grafana_folder" "sites" {
-  title = "Sites"
-  uid   = "sites"
 }
 
 # 2026-07-18 product-line reorg (renames in state, no destroy/create):
@@ -41,4 +30,15 @@ moved {
 moved {
   from = grafana_dashboard.lab["claude_runner_fleet"]
   to   = grafana_dashboard.claytonia["runner_fleet"]
+}
+
+# 2026-07-24 flattening. The folder resource is renamed rather than replaced so
+# the uid — and therefore every dashboard inside it — survives untouched. The
+# Claytonia / Solidago / Sites folder resources are simply deleted: their
+# dashboards move to this folder in the same apply, and Terraform orders the
+# folder deletes after the moves because each dashboard now depends on
+# grafana_folder.lentago instead.
+moved {
+  from = grafana_folder.lab
+  to   = grafana_folder.lentago
 }
