@@ -19,6 +19,11 @@ variable "grafana_cloud_access_policy_token" {
   type        = string
   sensitive   = true
   description = "Grafana Cloud access policy token with stack-plugins:read/write/delete. Set via TF_VAR_grafana_cloud_access_policy_token; never committed (public repo)."
+
+  validation {
+    condition     = length(trimspace(var.grafana_cloud_access_policy_token)) > 0
+    error_message = "The TF_VAR_grafana_cloud_access_policy_token secret resolved to an empty string. GitHub Actions renders a MISSING repo secret as empty rather than failing, so 'no default' alone does not catch an unset secret — this check does."
+  }
 }
 
 variable "grafana_stack_slug" {

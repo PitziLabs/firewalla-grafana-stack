@@ -39,6 +39,11 @@ variable "axiom_api_token" {
   type        = string
   sensitive   = true
   description = "Axiom API token for the ALB-logs datasource. Set via TF_VAR_axiom_api_token; never committed (public repo)."
+
+  validation {
+    condition     = length(trimspace(var.axiom_api_token)) > 0
+    error_message = "The TF_VAR_axiom_api_token secret resolved to an empty string. GitHub Actions renders a MISSING repo secret as empty rather than failing, so 'no default' alone does not catch an unset secret — this check does."
+  }
 }
 
 resource "grafana_data_source" "solidago_axiom" {
