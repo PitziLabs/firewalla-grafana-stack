@@ -908,7 +908,7 @@
       "id": 13,
       "type": "stat",
       "title": "Unique visitors (approx.)",
-      "description": "APPROXIMATE distinct visitors, counted by client_ip (dcount is an HLL estimate; shared/NAT IPs undercount). ALB logs carry no referer and no session identity, so true uniques are not knowable from this data.",
+      "description": "APPROXIMATE and a LOWER BOUND, not an estimate. Two independent effects push this number down: client_ip is truncated at ingest by betula (IPv4 last octet zeroed, IPv6 last 64 bits) for visitor privacy, so every host in a /24 collapses to one value \u2014 and neighbours on a shared ISP in this subdivision plausibly do share a /24; and dcount is an HLL estimate over that already-coarsened field. NAT and shared egress undercount further. ALB logs carry no referer and no session identity, so true uniques are not knowable from this data at all. Read this as a floor on distinct visitors, and read changes over time rather than the absolute value.",
       "datasource": {
         "type": "axiomhq-axiom-datasource",
         "uid": "solidago-axiom"
