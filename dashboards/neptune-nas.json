@@ -1,6 +1,6 @@
 {
   "uid": "firewalla-neptune-nas",
-  "title": "Neptune NAS",
+  "title": "Lentago Lab — Neptune NAS",
   "description": "Near-real-time activity for the Neptune NAS (Ugreen DXP, Intel N100, 2x4TB md-RAID1 -> btrfs /volume1). node_exporter (job=node, instance=neptune) for CPU/memory/disk/network/RAID, enriched with Home Assistant UGreen sensors for per-disk temps and fan. Scrape interval is 30s.",
   "tags": ["lentago-lab", "nas", "neptune", "storage", "node-exporter"],
   "timezone": "browser",

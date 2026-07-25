@@ -88,3 +88,14 @@ mail every 60s evaluation cycle.
   the root notification policy, or adding outside-in synthetic checks) requires
   revisiting this ADR and, where it touches platform metrics, solidago
   ADR-0001.
+
+## Addendum — 2026-07-24: folder flattening
+
+The per-product folder taxonomy was collapsed into a single **`Lentago`**
+folder, so the rule group described above no longer lives in a `Sites` folder;
+it lives in `Lentago` alongside everything else. Nothing about the decision
+changes — a rule group's placement is organisational, not semantic — but a rule
+group's Grafana identity is `<folder_uid>:<name>`, so the move replaced the
+group rather than updating it and reset in-flight alert state once. The
+per-domain client model, the NoData stance, and the per-rule routing are all
+untouched.

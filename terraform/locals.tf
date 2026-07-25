@@ -28,6 +28,12 @@ locals {
   # Lentago Lab (homelab-source) dashboards. Uids keep the legacy firewalla-
   # prefix: uids are load-bearing (cross-dashboard /d/ links, the office-display
   # public share, the import blocks) and changing one is a destroy/create.
+  #
+  # These four maps are *groups*, not folders — since the 2026-07-24 flattening
+  # every dashboard lands in the one `Lentago` folder, and the grouping is
+  # carried by the `<Group> — <What>` dashboard title instead. The maps stay
+  # separate because they differ in JSON pre-processing (the solidago set skips
+  # the datasource-uid rewrite).
   lab_dashboards = {
     network_overview = {
       uid  = "firewalla-network-overview"

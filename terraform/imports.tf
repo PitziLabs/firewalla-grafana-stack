@@ -5,7 +5,7 @@
 # recover by re-importing without code changes.
 
 import {
-  to = grafana_folder.lab
+  to = grafana_folder.lentago
   id = "afh7m8li40zk0d"
 }
 

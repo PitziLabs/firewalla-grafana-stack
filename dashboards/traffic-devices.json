@@ -1,6 +1,6 @@
 {
   "uid": "firewalla-traffic-devices",
-  "title": "Traffic & Devices",
+  "title": "Lentago Lab — Traffic & Devices",
   "description": "Network connection analysis, bandwidth estimation, and per-device activity breakdown",
   "tags": ["firewalla", "traffic", "devices"],
   "timezone": "browser",

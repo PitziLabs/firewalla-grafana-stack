@@ -77,10 +77,13 @@ locals {
   ])
 }
 
-# One rule group in the Sites folder holding every site-probe rule.
+# One rule group holding every site-probe rule. A rule group's identity is
+# `<folder_uid>:<name>`, so the 2026-07-24 folder flattening replaces this group
+# rather than updating it — the rules are recreated identically and any in-flight
+# alert state resets once. Expect that on the flattening apply only.
 resource "grafana_rule_group" "site_probes" {
   name             = "Site probe alerts"
-  folder_uid       = grafana_folder.sites.uid
+  folder_uid       = grafana_folder.lentago.uid
   interval_seconds = 60
 
   dynamic "rule" {
@@ -256,12 +259,13 @@ locals {
   ]
 }
 
-# One rule group in the Lentago Lab folder — these four streams are all
-# homelab-source feeds (Zeek/ACL from the Firewalla, device_inventory from the
-# lab Alloy), so they live alongside the lab dashboards, not under Sites.
+# One rule group for the four homelab-source feeds (Zeek/ACL from the Firewalla,
+# device_inventory from the lab Alloy). This group was already in the folder that
+# the 2026-07-24 flattening renamed to "Lentago", so the reference change below is
+# uid-identical and the group is updated in place, not replaced.
 resource "grafana_rule_group" "loki_ingest_absence" {
   name             = "Loki ingest absence"
-  folder_uid       = grafana_folder.lab.uid
+  folder_uid       = grafana_folder.lentago.uid
   interval_seconds = 60
 
   dynamic "rule" {
