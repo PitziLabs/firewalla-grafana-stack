@@ -68,6 +68,25 @@ default, so plan/apply fail loudly if it is unset. Two operational prerequisites
 alert-rule write scope — a token scoped for dashboards only will fail the apply when it
 reaches the `grafana_rule_group` / `grafana_contact_point` resources.
 
+The site traffic panels in [`datasources.tf`](datasources.tf) and
+[`plugins.tf`](plugins.tf) add two more, following the same repo-secret pattern:
+
+| Secret | Feeds | What it must be |
+|---|---|---|
+| `TF_VAR_AXIOM_API_TOKEN` | `TF_VAR_axiom_api_token` | An Axiom API token with **query** scope on the `cjp-solidago-alb` dataset. Backs `grafana_data_source.solidago_axiom`. |
+| `TF_VAR_GRAFANA_CLOUD_ACCESS_POLICY_TOKEN` | `TF_VAR_grafana_cloud_access_policy_token` | A Grafana **Cloud access policy** token with `stack-plugins:read`, `stack-plugins:write`, `stack-plugins:delete`. Backs `grafana_cloud_plugin_installation.axiom`. |
+
+**The Cloud token is not the same thing as `GRAFANA_AUTH`, and one cannot substitute for the
+other.** `GRAFANA_AUTH` is a *stack* service-account token: it manages dashboards, folders,
+datasources, and alert rules through the stack API. Installing a plugin is a *Grafana Cloud
+Portal* operation on a different API with its own auth, which is why `plugins.tf` declares an
+aliased `provider "grafana"` (`alias = "cloud"`) rather than reusing the default provider.
+Mint the Cloud token in the Grafana Cloud Portal under Access Policies, not in the stack's
+service-account UI.
+
+Both variables have no default, so an unset secret fails the plan loudly rather than
+applying a half-configured datasource.
+
 ## Adopting a new resource that already exists in Cloud
 
 1. Add an `import` block in `imports.tf`:
