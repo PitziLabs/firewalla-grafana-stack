@@ -107,7 +107,7 @@ look for `device_inventory` gaps (below) and for the metrics pipeline.
 ## Alerting
 
 Terraform provisions the stack's alerting end to end —
-[`terraform/alerts.tf`](terraform/alerts.tf): **12 rules** across two rule
+[`terraform/alerts.tf`](terraform/alerts.tf): **20 rules** across three rule
 groups in the `Lentago` folder, plus the stack's first contact point. See
 [docs/adr/0001-grafana-native-alerting-for-site-probes.md](docs/adr/0001-grafana-native-alerting-for-site-probes.md)
 for why this lives in Grafana instead of AWS.
@@ -120,18 +120,30 @@ for why this lives in Grafana instead of AWS.
   `no_data_state = "NoData"` deliberately: the probes run from one lab vantage
   point, so a lab/WAN outage looks identical to a real site outage, and
   alerting on NoData would misfire on every lab hiccup instead of a real one.
-- **`Loki ingest absence`** (4 rules — one each for `zeek_dns`, `zeek_conn`,
-  `firewalla_acl`, `device_inventory`): fires when a stream goes quiet longer
-  than its expected cadence (30m for the two high-volume Zeek streams, 2h for
-  the event-driven ACL stream, 3h for the hourly device-inventory cron).
-  `no_data_state = "Alerting"` here — the opposite of the probe rules — because
-  an empty Loki result *is* the failure this group exists to catch, not an
-  ambiguous vantage-point gap.
-- **Contact point:** one email contact point (`Site probe email`). The
-  recipient is `TF_VAR_alert_email`, a sensitive Terraform variable with no
-  default, supplied via CI/`.envrc` and never committed (this is a public
-  repo). Routing is scoped per-rule, so it doesn't touch the stack's root
-  notification policy.
+- **`Loki ingest absence`** (8 rules — one each for `zeek_dns`, `zeek_conn`,
+  `zeek_ssl`, `zeek_http`, `zeek_files`, `zeek_weird`, `firewalla_acl`,
+  `device_inventory`): fires when a stream goes quiet longer than its expected
+  cadence (30m–2h depending on measured volume; see the per-stream comments in
+  `terraform/alerts.tf`). `no_data_state = "Alerting"` here — the opposite of
+  the probe rules — because an empty Loki result *is* the failure this group
+  exists to catch, not an ambiguous vantage-point gap. `zeek_notice` carries no
+  absence alert (sparse, bursty by nature — a quiet day is a real zero).
+- **`Context ledger alerts`** (4 rules, issue #185 — quarantine, stale host
+  snapshot, and committer silence over `{service="context_ledger"}`, the
+  cross-repo event contract documented in
+  [lentago/claytonia docs/context-ledger.md](https://github.com/lentago/claytonia/blob/main/docs/context-ledger.md)
+  § Events). Events land once daily after the 05:00 committer sweep, so
+  windows are sized in days (26h default, 96h for the `cpitzi-ThinkPad`
+  laptop, which gets its own threshold and `info` severity since travel isn't
+  an incident). Quarantine fires immediately (`for = "0s"`) at `critical`
+  severity — it means the snapshot guard caught secret-shaped content in a
+  host's context. `claude_version` is deliberately never alerted on
+  (known-broken on workers, claytonia#89).
+- **Contact point:** one email contact point (`Site probe email`), reused by
+  all three groups. The recipient is `TF_VAR_alert_email`, a sensitive
+  Terraform variable with no default, supplied via CI/`.envrc` and never
+  committed (this is a public repo). Routing is scoped per-rule, so it doesn't
+  touch the stack's root notification policy.
 
 ## Solidago (AWS) contract
 
@@ -197,7 +209,8 @@ dashboards/                    # source of truth for Grafana dashboard JSON
   site-*.json                  # per-site health (Mimir probes + per-TG/service CloudWatch)
 terraform/                     # manages Cloud-side resources
   *.tf                         # incl. datasources.tf (solidago-cloudwatch) and
-                                # alerts.tf (site probe + Loki ingest-absence alert rules)
+                                # alerts.tf (site probe + Loki ingest-absence +
+                                # context-ledger alert rules)
 docs/adr/                      # architecture decision records (e.g. native alerting for site probes)
 scripts/
   inventory-cloud.sh           # snapshot current state of lentago.grafana.net
