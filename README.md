@@ -74,13 +74,19 @@ in this path. It attaches the `cluster="lentago-lab"` label itself (a static
 `Labels` directive in its Fluent Bit config), unlike the metrics side, where
 the central Alloy's `external_labels` injects that label.
 
-The four active log streams, keyed by `log_source`:
+The eight active log streams, keyed by `log_source` (the four `zeek_http`/
+`zeek_files`/`zeek_notice`/`zeek_weird` streams shipped in betula#58,
+2026-07-02):
 
 | `log_source` | Contents |
 |---|---|
 | `zeek_dns` | DNS query/response records from Zeek — domain, query type, client IP, answer. |
 | `zeek_conn` | TCP/UDP connection summaries — src/dst IP and port, bytes, duration, state. |
 | `zeek_ssl` | TLS handshake records — SNI, certificate subject, cipher, validation status. |
+| `zeek_http` | Plain-HTTP request records — host, URI, method, status, user agent. |
+| `zeek_files` | File-transfer analysis records — MIME type, source, hashes where computed. |
+| `zeek_notice` | Zeek notices — the engine's own alerts/anomalies. Sparse and bursty (~150–200 lines/day measured 2026-08-09), so it carries no ingest-absence alert; see `terraform/alerts.tf`. |
+| `zeek_weird` | Protocol-anomaly records ("weirds") — steady low-volume background (~10k lines/day). |
 | `firewalla_acl` | Firewalla ACL alarm events — blocked/allowed flows, rule name, severity. |
 
 **Change coordination:** the Firewalla side of this pipeline — the Fluent Bit
