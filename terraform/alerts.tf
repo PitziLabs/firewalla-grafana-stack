@@ -223,6 +223,15 @@ locals {
   # emitter whose absence is unambiguous. A synthetic ACL-liveness heartbeat that
   # would let firewalla_acl detect faster is the robust long-term fix and is out of
   # scope for this Loki-only issue (see PR body).
+  #
+  # 2026-08-09 (#183): the four betula#58 streams join the contract. Measured 24h
+  # volumes (Loki instant query, 2026-08-09): zeek_ssl 150k, zeek_http 89k,
+  # zeek_files 46k, zeek_weird 10k — all effectively continuous on this network,
+  # so they alert with windows sized to volume. zeek_notice measured 161 lines/day,
+  # sparse and bursty by nature (it emits only when the engine raises a notice), so
+  # per the same principle as firewalla_acl-but-worse it gets NO absence alert — a
+  # quiet day is a real zero, and the checker script still reports it missing if it
+  # goes silent for a full 24h.
   loki_ingest_streams = [
     {
       key          = "zeek-dns"
@@ -239,6 +248,38 @@ locals {
       window       = "30m"
       from_seconds = 1800
       summary      = "No zeek_conn log lines ingested in the last 30m. This is a constant, high-volume stream — a zero means the Firewalla Fluent Bit conn shipper has stopped delivering to Cloud Loki."
+    },
+    {
+      key          = "zeek-ssl"
+      stream       = "zeek_ssl"
+      name         = "Ingest absence — zeek_ssl"
+      window       = "30m"
+      from_seconds = 1800
+      summary      = "No zeek_ssl log lines ingested in the last 30m. TLS handshakes are a constant, high-volume stream (~150k lines/day) — a zero means the Firewalla Fluent Bit ssl shipper has stopped delivering to Cloud Loki."
+    },
+    {
+      key          = "zeek-http"
+      stream       = "zeek_http"
+      name         = "Ingest absence — zeek_http"
+      window       = "1h"
+      from_seconds = 3600
+      summary      = "No zeek_http log lines ingested in the last 1h. Plain-HTTP records run ~89k lines/day on this network; the 1h window absorbs browsing lulls. A sustained gap means the http shipper has stopped."
+    },
+    {
+      key          = "zeek-files"
+      stream       = "zeek_files"
+      name         = "Ingest absence — zeek_files"
+      window       = "1h"
+      from_seconds = 3600
+      summary      = "No zeek_files log lines ingested in the last 1h. File-analysis records run ~46k lines/day; the 1h window absorbs quiet periods. A sustained gap means the files shipper has stopped."
+    },
+    {
+      key          = "zeek-weird"
+      stream       = "zeek_weird"
+      name         = "Ingest absence — zeek_weird"
+      window       = "2h"
+      from_seconds = 7200
+      summary      = "No zeek_weird log lines ingested in the last 2h. Protocol anomalies are steady low-volume background (~10k lines/day); a 2h zero is implausible on a live network and means the weird shipper has stopped."
     },
     {
       key          = "firewalla-acl"
