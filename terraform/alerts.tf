@@ -487,7 +487,10 @@ locals {
       # express a per-host threshold (it's one global CONTEXT_STALE_S for
       # every host), so this rule recomputes from the raw snapshot_age_s via
       # unwrap instead of reusing status like the fleet rule above.
-      expr           = "max by (host) (max_over_time({service=\"context_ledger\", host=\"cpitzi-ThinkPad\"} | json | event=\"context_host\" | snapshot_age_s != \"\" | unwrap snapshot_age_s [${local.context_ledger_laptop_window}]))"
+      # last_over_time, not max_over_time: max would keep a recovered laptop
+      # firing until the old high reading aged out of the 96h window (days of
+      # post-recovery false positives). The CURRENT age is the signal.
+      expr           = "max by (host) (last_over_time({service=\"context_ledger\", host=\"cpitzi-ThinkPad\"} | json | event=\"context_host\" | snapshot_age_s != \"\" | unwrap snapshot_age_s [${local.context_ledger_laptop_window}]))"
       from_seconds   = local.context_ledger_laptop_window_s
       evaluator_type = "gt"
       threshold      = local.context_ledger_laptop_window_s
