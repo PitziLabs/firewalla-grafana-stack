@@ -10,7 +10,7 @@
   "editable": true,
   "graphTooltip": 1,
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "30s",
   "time": {
     "from": "now-3h",
@@ -1163,6 +1163,338 @@
           },
           "queryType": "range",
           "expr": "{job=\"claude_transcript\", worker=\"claude-runner-5\", project=~\"$project\"} !~ `^\\[TOOL\\]` | line_format `{{ regexReplaceAll \"\\\\s*\\\\[TOOL\\\\].*\" __line__ \"\" }}`"
+        }
+      ]
+    },
+    {
+      "id": 204,
+      "type": "row",
+      "title": "Context Ledger",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 100,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 300,
+      "type": "stat",
+      "title": "Hosts swept (last sweep)",
+      "description": "Host slots seen in incoming/ on the most recent context-ledger sweep (last 48 h).",
+      "gridPos": {
+        "x": 0,
+        "y": 101,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "instant",
+          "expr": "sum(last_over_time({job=\"claude_runner\", service=\"context_ledger\"} | json | event=\"context_sweep\" | unwrap swept [48h])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 301,
+      "type": "stat",
+      "title": "Hosts updated (last sweep)",
+      "description": "Hosts whose ledger commit was pushed on the most recent sweep (last 48 h).",
+      "gridPos": {
+        "x": 6,
+        "y": 101,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "instant",
+          "expr": "sum(last_over_time({job=\"claude_runner\", service=\"context_ledger\"} | json | event=\"context_sweep\" | unwrap changed [48h])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 302,
+      "type": "stat",
+      "title": "Quarantined (last sweep)",
+      "description": "Hosts carrying a QUARANTINE.txt on the most recent sweep (last 48 h) — a secret-scan or denylist hit tripped during snapshotting. Non-zero is a security finding; investigate immediately.",
+      "gridPos": {
+        "x": 12,
+        "y": 101,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "instant",
+          "expr": "sum(last_over_time({job=\"claude_runner\", service=\"context_ledger\"} | json | event=\"context_sweep\" | unwrap quarantined [48h])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 303,
+      "type": "stat",
+      "title": "Last sweep duration",
+      "description": "Wall-clock seconds for the most recent context-ledger committer run (last 48 h).",
+      "gridPos": {
+        "x": 18,
+        "y": 101,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "gray"
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "instant",
+          "expr": "sum(last_over_time({job=\"claude_runner\", service=\"context_ledger\"} | json | event=\"context_sweep\" | unwrap duration_s [48h])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 310,
+      "type": "timeseries",
+      "title": "Snapshot age per host",
+      "description": "Age (in seconds) of each host's most recent context snapshot at time of sweep. Stale threshold: 26 h (93 600 s) shown in red. Sweeps run daily — extend the time range beyond 3 h to see sweep history.",
+      "gridPos": {
+        "x": 0,
+        "y": 105,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "auto"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 93600
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "range",
+          "expr": "last_over_time({job=\"claude_runner\", service=\"context_ledger\"} | json | event=\"context_host\" | unwrap snapshot_age_s [26h]) by (host)",
+          "legendFormat": "{{host}}"
+        }
+      ]
+    },
+    {
+      "id": 311,
+      "type": "logs",
+      "title": "Per-host context state",
+      "description": "Recent context_host events — one per host per sweep. Format: host | status (ok/stale/quarantined) | snapshot age | Claude version | memory mode | memory files/bytes | skills count | ledger commit SHA. Commit SHA links: https://github.com/lentago/myosotis/commit/<sha>. Note: claude_version shows '(unavailable)' fleet-wide until claytonia#89 lands.",
+      "gridPos": {
+        "x": 0,
+        "y": 113,
+        "w": 16,
+        "h": 10
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "range",
+          "expr": "{job=\"claude_runner\", service=\"context_ledger\"} | json | event=\"context_host\" | line_format \"{{.host}} | {{.status}} | age={{.snapshot_age_s}}s | v={{.claude_version}} | {{.memory_mode}} | mem={{.memory_files}}f/{{.memory_bytes}}B | skills={{.skills_count}} | commit={{.commit}}\""
+        }
+      ]
+    },
+    {
+      "id": 312,
+      "type": "logs",
+      "title": "Sweep events",
+      "description": "context_sweep events — one per committer run. Shows hosts seen in incoming/ (swept), hosts with ledger commits pushed (updated), quarantine hits, and wall-clock duration.",
+      "gridPos": {
+        "x": 16,
+        "y": 113,
+        "w": 8,
+        "h": 10
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "queryType": "range",
+          "expr": "{job=\"claude_runner\", service=\"context_ledger\"} | json | event=\"context_sweep\" | line_format \"swept={{.swept}} updated={{.changed}} quarantined={{.quarantined}} in {{.duration_s}}s\""
         }
       ]
     }
