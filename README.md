@@ -40,6 +40,79 @@ Everything is declarative:
   per-host push agents run from the config embedded in
   [`scripts/deploy-alloy.sh`](scripts/deploy-alloy.sh).
 
+## 📚 Ask this codebase (DeepWiki)
+
+<a href="https://deepwiki.com/lentago/drosera"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" height="32"></a>
+
+> [DeepWiki](https://deepwiki.com/lentago/drosera) maintains an AI-generated wiki over this
+> repository — architecture pages, diagrams, and a Q&A box grounded in the actual code. Every
+> public Lentago Labs repo is indexed ([deepwiki.com/lentago](https://deepwiki.com/lentago));
+> it is the fastest way to orient before reading source. It is AI-generated: trust it to orient
+> you, verify against the code before you act on it.
+
+**Good first questions:**
+
+- How does a per-host node_exporter metric get from the host to a Grafana Cloud dashboard, and where does the central Alloy on LXC 105 fit in versus per-host push agents?
+- What happens in CI when I open a PR that only changes a dashboard JSON file, versus one that changes both `terraform/` and `dashboards/` — which jobs run and what gates the merge?
+- How does drosera coordinate the Loki `log_source` label contract with lentago/betula so a schema change on one side doesn't silently break dashboards on the other?
+
+## 🧭 What this repo demonstrates
+
+This is a real everything-as-code observability stack: dashboards, alerts, and datasources are
+Terraform, applied automatically on merge to `main`. Each pattern below links to the code that
+proves it.
+
+| Pattern | How it shows up here |
+|---|---|
+| **Apply-on-merge IaC for a live SaaS surface** — the merged PR *is* the change record | The `apply` job in [`.github/workflows/terraform.yml`](.github/workflows/terraform.yml) runs `terraform apply -auto-approve` on every push to `main` that touches [`terraform/`](terraform/) or [`dashboards/`](dashboards/) — the Grafana Cloud stack is code, not clickable UI state. |
+| **Deadlock-safe required-check gating** | The unfiltered `pull_request` trigger + `changes` filter job + `gate` job with `if: always()` in [`terraform.yml`](.github/workflows/terraform.yml) — a path-filtered heavy job can't hang a PR forever as an "Expected" check (rationale cites lentago/.github#27). |
+| **OIDC to AWS, no static credentials** | [`terraform.yml`](.github/workflows/terraform.yml) requests `id-token: write` and assumes an IAM role for the S3 state backend — no long-lived AWS keys live in CI secrets. |
+| **Serialized apply via concurrency group** | The `apply` job's `concurrency: { group: terraform-apply, cancel-in-progress: false }` in [`terraform.yml`](.github/workflows/terraform.yml) — two quick merges queue instead of racing on the same Terraform state. |
+| **Reusable CI shared across the fleet** | [`docs-check.yml`](.github/workflows/docs-check.yml) and [`claude-code-review.yml`](.github/workflows/claude-code-review.yml) are thin wrappers over `uses: lentago/shared-workflows/...@main` — one definition maintained centrally, consumed by every repo. |
+| **Branch protection as a ruleset, not ad-hoc settings** | `main` requires the named checks `gate`, `shellcheck / shellcheck`, and `docs-check / docs-check` and allows squash merges only — enforced at the platform level, so merge is gated on CI, not convention. |
+| **Alerting-as-code with written design intent** | [`terraform/alerts.tf`](terraform/alerts.tf) provisions 20 rules across 3 groups; [`docs/adr/0001-...md`](docs/adr/0001-grafana-native-alerting-for-site-probes.md) records *why* these live in Grafana (not AWS) and why each group's `no_data_state` differs. |
+| **Cross-repo contract discipline** | The [Loki output contract](#loki-output-contract) and [Solidago (AWS) contract](#solidago-aws-contract) sections name exactly which repo owns which label, field, and IAM role — explicit written boundaries instead of drift. |
+
+## 🛠️ Make a change yourself
+
+This is a lab — the systems are real, the stakes are not. Pick a vector:
+
+**1. Add or edit a Grafana dashboard as JSON.** Drop or edit a dashboard file under
+[`dashboards/`](dashboards/) and reference it from a `for_each` map in
+[`terraform/dashboards.tf`](terraform/dashboards.tf) (via [`locals.tf`](terraform/locals.tf)),
+then open a PR. CI runs `fmt`/`validate`/`plan` and posts the `terraform plan` as a PR comment
+for review; the `gate` check must be green to merge. On merge to `main` the `apply` job upserts
+the dashboard into Grafana Cloud through the `grafana/grafana` provider — no manual Grafana UI
+step anywhere in the loop.
+**Proof this works:** [#187 — feat(dashboard): Context Ledger section on Claytonia — Runner Fleet](https://github.com/lentago/drosera/pull/187),
+[#171 — feat: add essexcrossingatmontserrat.com probe and dashboard](https://github.com/lentago/drosera/pull/171),
+[#163 — Reorganize and rename dashboards along product lines](https://github.com/lentago/drosera/pull/163).
+
+**2. Recover a live-only edit before apply-on-merge destroys it.** Because merge re-applies
+repo state, a dashboard hand-edited in the Grafana UI is un-codified work living on borrowed
+time: the next unrelated merge's `apply` silently reverts it. That is exactly what happened in
+2026-07 — a fleet-scoreboard revamp was pushed live via the API but never committed, and five
+later bug-fix merges each ran the apply and stomped it. The fix is not to distrust apply-on-merge
+but to make code the source of truth: pull the lost panel JSON out of Grafana's dashboard version
+history, commit it into [`dashboards/`](dashboards/) + [`terraform/dashboards.tf`](terraform/dashboards.tf),
+and merge — so future applies preserve the change instead of reverting it.
+**Proof this works:** [#119 — infra-health: restore fleet-scoreboard revamp lost to IaC drift stomp](https://github.com/lentago/drosera/pull/119),
+[#120 — CLAUDE.md: add anti-drift rule for live dashboard edits](https://github.com/lentago/drosera/pull/120).
+
+**3. Onboard alerting for a new signal.** Add a rule group to
+[`terraform/alerts.tf`](terraform/alerts.tf), choosing `no_data_state` deliberately per signal
+type (an absent probe is an ambiguous vantage-point gap; an empty log stream *is* the failure —
+opposite stances, both defensible), and record the rationale in an ADR under
+[`docs/adr/`](docs/adr/). The PR triggers a plan; merge applies the rule group and, if new, the
+contact-point wiring — the same apply-on-merge path as dashboards.
+**Proof this works:** [#188 — Add context-ledger alert rules](https://github.com/lentago/drosera/pull/188),
+[#175 — Alert on ingest absence for the critical Loki streams](https://github.com/lentago/drosera/pull/175),
+[#172 — feat: Grafana-native alerting for site probes](https://github.com/lentago/drosera/pull/172).
+
+Vectors 1 and 3 need no special access beyond opening a PR; a human owns every merge. Editing
+the live Grafana stack directly (vector 2's failure mode) requires a Grafana Cloud account on the
+`lentago` stack.
+
 ## Architecture
 
 Node metrics **push** from each host (host-local Alloy → Mimir, 15s); the
@@ -529,3 +602,10 @@ overwritten on next apply); and Cloud handles Grafana upgrades.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+> 🌱 **Lentago Labs** is a team learning lab — real systems, non-critical stakes, modern
+> operations patterns demonstrated in the open. Start at the
+> [org profile](https://github.com/lentago), and read this repo on
+> [DeepWiki](https://deepwiki.com/lentago/drosera).
