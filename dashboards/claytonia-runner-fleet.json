@@ -1432,7 +1432,7 @@
       "id": 311,
       "type": "logs",
       "title": "Per-host context state",
-      "description": "Recent context_host events — one per host per sweep. Format: host | status (ok/stale/quarantined) | snapshot age | Claude version | memory mode | memory files/bytes | skills count | ledger commit SHA. Commit SHA links: https://github.com/lentago/myosotis/commit/<sha>. Note: claude_version shows '(unavailable)' fleet-wide until claytonia#89 lands.",
+      "description": "Recent context_host events — one per host per sweep. Format: host | status (ok/stale/quarantined) | snapshot age | Claude version | memory mode | memory files/bytes | skills count | ledger commit SHA. Commit SHA links: https://github.com/cpitzi/myosotis/commit/<sha> (ledger transferred out of the org 2026-08-12). Note: claude_version shows '(unavailable)' fleet-wide until claytonia#89 lands.",
       "gridPos": {
         "x": 0,
         "y": 113,
