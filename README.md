@@ -139,6 +139,11 @@ label conventions: [docs/metrics-flow.md](docs/metrics-flow.md).**
                                                   public share ──▶ Office Display
 ```
 
+**Architecture decisions:** the reasoning behind this layout — the Cloud + Alloy
++ Terraform migration, host-local push, apply-on-merge, series-budget
+engineering, privacy-shaped egress, and the flat dashboard folder — is recorded
+as decision records in [docs/adr/](docs/adr/).
+
 ## Loki output contract
 
 Firewalla's Fluent Bit shipper pushes Zeek/ACL logs **directly** to Grafana
