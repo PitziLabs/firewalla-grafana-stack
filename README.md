@@ -230,8 +230,21 @@ for the SLO targets and burn-rate design.
   recording rules, zero new Mimir series. `no_data_state = "NoData"` as with the
   probe group (same single-vantage reason). Operator view:
   the **Sites — SLOs & Error Budget** dashboard (uid `sites-slo-error-budget`).
+- **`Bullpen liveness`** (3 rules, issue #207 — runner-fleet liveness + retry,
+  the game-day #1 gap). Built on the same `event="job_running"` heartbeat the
+  Claytonia — Runner Fleet dashboard renders: **workers below full strength**
+  tickets when fewer than 5 distinct workers heartbeat for 5m, a **`.retry`
+  requeue** tickets on any reaper-driven requeue (a worker died mid-job and
+  recovery self-healed silently), and a **fully-dark fleet** pages when zero
+  workers heartbeat for 10m (`no_data_state = "Alerting"` — an empty result
+  *is* the failure, as with the ingest-absence group). Loki-sourced, zero new
+  Mimir series. **Caveat:** job_running marks *busy* workers, not
+  idle-but-alive ones, so the two headcount rules can false-fire on a
+  legitimate idle stretch until claytonia ships an always-on
+  `workers/<host>.alive` heartbeat to Loki (boundary: drosera owns the rules,
+  claytonia owns the telemetry). See ADR-0009.
 - **Contact point:** one email contact point (`Site probe email`), reused by
-  all four groups. The recipient is `TF_VAR_alert_email`, a sensitive
+  all five groups. The recipient is `TF_VAR_alert_email`, a sensitive
   Terraform variable with no default, supplied via CI/`.envrc` and never
   committed (this is a public repo). Routing is scoped per-rule, so it doesn't
   touch the stack's root notification policy.

@@ -873,3 +873,233 @@ resource "grafana_rule_group" "site_slo_burn" {
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# Bullpen (claytonia runner fleet) liveness + retry alerts (issue #207).
+# See docs/adr/0009-bullpen-liveness-and-retry-alerting.md.
+#
+# WHY: game-day #1 (2026-08-17, lentago/.github fleet-reports/incidents/
+# 2026-08-17-gameday-1-runner-kill.md) killed claude-runner-5 mid-job. The
+# queue's stale-heartbeat reaper requeued the orphan (`.retry`) and a second
+# worker finished it in 84s — fully autonomous recovery — and NO ALERT FIRED
+# ANYWHERE, because nothing watches worker liveness or requeue events. The
+# archive then volunteered two more real production reaps (2026-07-08) that
+# also went unnoticed. This is the third "absence of expected signal" member
+# in the family with #176 (Loki ingest absence) and #204 (red main-branch
+# runs): silent self-healing hides real infrastructure problems (a host that
+# reboots its workers nightly would look like nothing at all).
+#
+# BOUNDARY (from the issue): the alert rules belong HERE — drosera owns the
+# observability pane. claytonia owns emitting any telemetry these rules need
+# but that Loki does not yet carry. That boundary is load-bearing for the
+# caveat below.
+#
+# SIGNAL — same one the Claytonia — Runner Fleet dashboard already renders.
+# The dashboard's "Offload — concurrent runs" panel counts distinct workers
+# from the `event="job_running"` heartbeat on `{job="claude_runner"}`
+# (dashboards/claytonia-runner-fleet.json). That heartbeat is pushed every
+# ~15s WHILE A WORKER IS PROCESSING A JOB. These rules build the headcount on
+# the identical inner expression, aggregated to a scalar.
+#
+# LIMITATION — READ BEFORE TUNING. job_running marks BUSY workers, not
+# idle-but-alive ones (the panel description says so verbatim: "distinct busy
+# workers"). There is no always-on runner-fleet liveness heartbeat in Loki
+# today: `session_running` is the workstation (`claude_local`) heartbeat, and
+# the queue's own `workers/<host>.alive` 30s heartbeat is a git-queue FILE,
+# not shipped to Loki. Consequence: on a genuinely low-load or idle stretch,
+# fewer than 5 (or zero) workers will have run a job in the window and the
+# headcount rules WILL fire even though every worker is healthy. The durable
+# fix is claytonia shipping `workers/<host>.alive` to Loki as an always-on
+# heartbeat (the boundary above) — at which point rule 1/3's query flips to
+# that stream and the busy/alive ambiguity disappears. Until then these two
+# rules trade some idle-period noise for closing the game-day gap; the retry
+# rule (rule 2) has no such caveat and is the sharpest of the three. See the
+# PR body — this whole group is marked needs-live-verify (no Loki creds in the
+# authoring env, so the queries below are unproven against live data).
+#
+# NO NEW SERIES (15k Mimir cap): these are Loki-datasource rules evaluated in
+# Grafana's engine — zero remote-written series, same as the ingest-absence
+# and context-ledger groups.
+locals {
+  # The bullpen is a known-size pool: claude-runner, -2, -3, -4, -5 on pve4
+  # (README § "Fleet reasoning stream"). Adding/removing a worker is a
+  # one-line change here.
+  bullpen_expected_workers = 5
+
+  # Distinct active (busy) workers — EXACTLY the fleet dashboard's liveness
+  # inner expression, aggregated to a headcount. `| json` promotes every field
+  # to a label, so `max by (worker)(... > bool 0)` collapses back to one series
+  # per worker (value 1 if it heartbeated at all in the window); `count()` then
+  # yields the number of distinct workers. 15m window: job_running fires ~every
+  # 15s while busy, so 15m is generous coverage for a worker briefly between
+  # jobs — long enough that a healthy busy fleet accumulates all five, short
+  # enough that a dead worker drops out within window + `for`.
+  bullpen_active_workers_expr = "count(max by (worker) (count_over_time({job=\"claude_runner\"} | json | event=\"job_running\" [15m]) > bool 0))"
+
+  bullpen_rules = [
+    {
+      key  = "workers-degraded"
+      name = "Bullpen workers below full strength"
+      # 1–4 distinct active workers → partial capacity loss → ticket. A FULLY
+      # dark fleet returns an EMPTY Loki result (count over no series = NoData,
+      # not a literal 0); that case is escalated by the page rule below, so
+      # here no_data_state = "OK" — it prevents this ticket from double-firing
+      # alongside the page when the fleet is completely dark.
+      expr            = local.bullpen_active_workers_expr
+      from_seconds    = 900
+      evaluator_type  = "lt"
+      threshold       = local.bullpen_expected_workers # < 5
+      for             = "5m"                           # the issue's ">5m" persistence
+      no_data_state   = "OK"
+      severity        = "warning"
+      repeat_interval = "12h"
+      summary         = "Fewer than 5 distinct bullpen workers have emitted a job_running heartbeat for 5m — the fleet is running below full strength (a worker died and the reaper hasn't been noticed, OR the fleet is legitimately low-load; see the busy-vs-alive caveat in terraform/alerts.tf). Check the Claytonia — Runner Fleet dashboard (/d/claude-runner-fleet) 'Offload — concurrent runs' panel, then `pct start` any stopped runner LXC on pve4."
+    },
+    {
+      key  = "workers-dark"
+      name = "Bullpen fully dark — no active workers"
+      # Zero active workers is the betula#86 "queue fully dark" shape applied to
+      # the bullpen. It surfaces as an EMPTY Loki result (NoData), NOT a literal
+      # 0 — so no_data_state = "Alerting" IS THE CRUX here, exactly like the
+      # ingest-absence group. The `lt 1` threshold on C is the belt to that
+      # suspenders for the rare case the query does reduce to a literal 0.
+      expr            = local.bullpen_active_workers_expr
+      from_seconds    = 900
+      evaluator_type  = "lt"
+      threshold       = 1     # == 0 active
+      for             = "10m" # longer guard than the ticket: a page must not fire on a brief lull
+      no_data_state   = "Alerting"
+      severity        = "critical"
+      repeat_interval = "1h"
+      summary         = "NO bullpen worker has emitted a job_running heartbeat for 10m — the runner fleet appears fully dark. Either every worker on pve4 is down (check the LXCs 113/114/115/116/117 and `pct start`) or ingest from the fleet has stopped. NOTE: an extended legitimate idle period can also trip this until an always-on worker heartbeat lands (claytonia) — see terraform/alerts.tf. Cross-check the Claytonia — Runner Fleet dashboard before treating as an incident."
+    },
+    {
+      key  = "retry-requeue"
+      name = "Bullpen job requeued (.retry)"
+      # Rule 2 — the sharpest of the three, no busy-vs-alive caveat. The stale-
+      # heartbeat reaper requeues an orphaned job with a `.retry` runid suffix
+      # (game-day post-mortem: the reap leaves `logs/<runid>.retry.*` artifacts;
+      # `runid` is the same field the dashboard's "Recent runner jobs" panel
+      # renders). Every firing is a worker death worth a ticket — at-least-once
+      # recovery working as designed, but silent, which is the whole finding.
+      # Presence check over 1h so a single requeue is caught; `for = "0s"` fires
+      # immediately (a requeue is a discrete event, not a trend); no_data_state
+      # = "OK" because "no retries" is the overwhelmingly normal case (same
+      # stance as the context-ledger presence rules).
+      #
+      # ASSUMPTION the reviewer MUST live-verify: that the requeued run's `.retry`
+      # marker appears in Loki as a `runid` matching /.+\.retry/. If claytonia
+      # instead carries retry state in a different field (e.g. an `attempt`
+      # count or a `retry=true` flag), swap the selector — the rule shape is
+      # unchanged. Confirmed telemetry emission is claytonia's boundary.
+      expr            = "sum(count_over_time({job=\"claude_runner\"} | json | runid =~ \".+\\\\.retry\" [1h]))"
+      from_seconds    = 3600
+      evaluator_type  = "gt"
+      threshold       = 0
+      for             = "0s"
+      no_data_state   = "OK"
+      severity        = "warning"
+      repeat_interval = "6h"
+      summary         = "A bullpen job was requeued as .retry in the last hour — the stale-heartbeat reaper reclaimed an orphaned job, i.e. a worker died mid-job and recovery self-healed silently. Not urgent (at-least-once recovery worked), but every firing is a real worker death worth investigating: check which runner dropped out on the Claytonia — Runner Fleet dashboard and why (OOM, host reboot, pct stop)."
+    },
+  ]
+}
+
+# One rule group for the three bullpen rules. Same folder, contact point, and
+# per-rule routing model as the four groups above. The A+C single-condition
+# shape matches the context-ledger group (per-rule evaluator_type / threshold /
+# no_data_state), so this reuses that template exactly.
+resource "grafana_rule_group" "bullpen_liveness" {
+  name             = "Bullpen liveness"
+  folder_uid       = grafana_folder.lentago.uid
+  interval_seconds = 60
+
+  dynamic "rule" {
+    for_each = { for r in local.bullpen_rules : r.key => r }
+
+    content {
+      name           = rule.value.name
+      for            = rule.value.for
+      condition      = "C"
+      no_data_state  = rule.value.no_data_state
+      exec_err_state = "Error"
+
+      # A: the Loki query — either the distinct-active-worker headcount (rules 1
+      # and 3 share local.bullpen_active_workers_expr) or the .retry presence
+      # count (rule 2). Loki datasource UID hardcoded exactly as the other
+      # Loki-sourced groups (grafanacloud-logs); the locals.tf datasource
+      # rewrite machinery touches dashboard JSON only, never alert rules.
+      data {
+        ref_id         = "A"
+        datasource_uid = "grafanacloud-logs"
+
+        relative_time_range {
+          from = rule.value.from_seconds
+          to   = 0
+        }
+
+        model = jsonencode({
+          refId         = "A"
+          expr          = rule.value.expr
+          queryType     = "instant"
+          editorMode    = "code"
+          intervalMs    = 1000
+          maxDataPoints = 43200
+          datasource = {
+            type = "loki"
+            uid  = "grafanacloud-logs"
+          }
+        })
+      }
+
+      # C: threshold on A. evaluator_type varies per rule (lt for the two
+      # headcount rules, gt for the retry presence check) — same per-rule
+      # comparator pattern as the context-ledger group.
+      data {
+        ref_id         = "C"
+        datasource_uid = "__expr__"
+
+        relative_time_range {
+          from = 0
+          to   = 0
+        }
+
+        model = jsonencode({
+          refId = "C"
+          type  = "classic_conditions"
+          datasource = {
+            type = "__expr__"
+            uid  = "__expr__"
+          }
+          conditions = [{
+            type = "query"
+            evaluator = {
+              type   = rule.value.evaluator_type
+              params = [rule.value.threshold]
+            }
+            operator = { type = "and" }
+            query    = { params = ["A"] }
+            reducer  = { type = "last", params = [] }
+          }]
+        })
+      }
+
+      # Reuse the stack's single contact point — every group in this file does.
+      # Per-rule routing only; the root notification policy stays untouched.
+      # Page tier re-notifies hourly, tickets every 6–12h.
+      notification_settings {
+        contact_point   = grafana_contact_point.site_alerts_email.name
+        repeat_interval = rule.value.repeat_interval
+      }
+
+      labels = {
+        service  = "bullpen"
+        severity = rule.value.severity
+      }
+
+      annotations = {
+        summary = rule.value.summary
+      }
+    }
+  }
+}
