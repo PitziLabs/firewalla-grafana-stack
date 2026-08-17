@@ -1,0 +1,98 @@
+# Estate status page — the maintainer-facing variant (issue #196).
+#
+# This file is the ONLY thing that changes between variants: the build script
+# (status-page/build.py) is variant-agnostic. A client-facing "are we open / is
+# it running" page is config/client-example.toml — same code, different config.
+#
+# Every user-visible string lives here. Adding a site or repo is a one-line
+# addition; nothing here asserts correctness or guarantees.
+
+variant = "estate"
+
+[page]
+title = "Lentago Labs — Estate Status"
+subtitle = "Site availability and fleet CI health. Rebuilt on a schedule from Grafana Cloud Mimir and the GitHub API."
+footer_note = "Availability is measured by outside-in blackbox probes from a single lab vantage point (see drosera/terraform/alerts.tf) and may not reflect every condition a visitor experiences. Informational only."
+
+# --- SLO definition (must match terraform/alerts.tf `local.slo_burn_alerts`) ---
+[slo]
+target = 0.999        # 99.9% availability
+window_days = 30      # rolling 30-day window
+show_error_budget = true
+show_target = true
+
+# --- Site availability -------------------------------------------------------
+[availability]
+enabled = true
+heading = "Site availability"
+# Grafana Cloud Mimir datasource UID, proxied via the Grafana instance API when
+# querying with GRAFANA_URL / GRAFANA_AUTH. Ignored when a direct
+# MIMIR_QUERY_ENDPOINT is configured.
+datasource_uid = "grafanacloud-prom"
+
+# The three public sites with an independent SLO objective (issue #195/R14).
+[[availability.sites]]
+name = "lentago.dev"
+label = "lentago.dev"
+job = "integrations/blackbox/lentago.dev"
+slo = true
+
+[[availability.sites]]
+name = "icecreamtofightwith.com"
+label = "icecreamtofightwith.com"
+job = "integrations/blackbox/icecreamtofightwith.com"
+slo = true
+
+[[availability.sites]]
+name = "pondviewlane.com"
+label = "pondviewlane.com"
+job = "integrations/blackbox/pondviewlane.com"
+slo = true
+
+# essex shares pondviewlane's ECS service — probed, but not an independent
+# objective, so it shows live availability without an error budget (mirrors the
+# alerts.tf exclusion of essex from the SLO burn-rate group).
+[[availability.sites]]
+name = "essexcrossingatmontserrat.com"
+label = "essexcrossingatmontserrat.com"
+job = "integrations/blackbox/essexcrossingatmontserrat.com"
+slo = false
+note = "Shares the pondviewlane.com ECS service; not an independent SLO objective."
+
+# --- Fleet CI health ---------------------------------------------------------
+# Latest completed main-branch workflow conclusion per repo, via the GitHub API.
+[ci]
+enabled = true
+heading = "Fleet CI health — latest main run"
+
+[[ci.repos]]
+name = "lentago/drosera"
+[[ci.repos]]
+name = "lentago/solidago"
+[[ci.repos]]
+name = "lentago/claytonia"
+[[ci.repos]]
+name = "lentago/betula"
+[[ci.repos]]
+name = "lentago/kalmia"
+[[ci.repos]]
+name = "lentago/osmunda"
+[[ci.repos]]
+name = "lentago/monarda"
+[[ci.repos]]
+name = "lentago/shared-workflows"
+[[ci.repos]]
+name = "lentago/.github"
+[[ci.repos]]
+name = "lentago/site-lentago-dev"
+[[ci.repos]]
+name = "lentago/site-pondviewlane-com"
+[[ci.repos]]
+name = "lentago/site-icecreamtofightwith-com"
+
+# --- Incident register -------------------------------------------------------
+[incidents]
+enabled = true
+heading = "Incidents"
+url = "https://github.com/lentago/.github/blob/main/fleet-reports/incidents.md"
+label = "Public incident register (lentago/.github)"

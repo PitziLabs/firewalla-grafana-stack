@@ -1,0 +1,52 @@
+# Client-facing variant SCAFFOLD — "are we open / is it running?" (issue #196).
+#
+# This is the proof that a second variant is "a config file away": it reuses
+# status-page/build.py unchanged. It is NOT wired into the schedule workflow yet
+# (the estate variant ships first). To publish it, point a build step at this
+# file (`--config status-page/config/client-example.toml`) and give it its own
+# output path / Pages target.
+#
+# The client variant deliberately hides the engineering internals: no error
+# budgets, no CI section, plain-language status words. It still degrades to
+# "unknown" (never a fake green) when a source is unavailable.
+
+variant = "client"
+
+[page]
+title = "Is it running?"
+subtitle = "Current status of our public sites."
+footer_note = "Live status is checked automatically from outside. This page is informational."
+
+# Re-label the neutral status words for a non-technical audience. Any string the
+# page shows can be overridden here.
+[status_labels]
+operational = "Running"
+down = "Disruption"
+nodata = "Unknown"
+
+[slo]
+target = 0.999
+window_days = 30
+show_error_budget = false   # hide the budget column for the client view
+show_target = false         # hide the SLO/probe explainer line
+
+[availability]
+enabled = true
+heading = "Our sites"
+datasource_uid = "grafanacloud-prom"
+
+[[availability.sites]]
+name = "pondviewlane.com"
+label = "Pond View Lane"
+job = "integrations/blackbox/pondviewlane.com"
+slo = true
+
+# CI health is an internal concern — off for the client variant.
+[ci]
+enabled = false
+
+[incidents]
+enabled = true
+heading = "Service notices"
+url = "https://github.com/lentago/.github/blob/main/fleet-reports/incidents.md"
+label = "Recent notices"
