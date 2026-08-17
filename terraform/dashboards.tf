@@ -35,3 +35,11 @@ resource "grafana_dashboard" "sites" {
   overwrite   = true
   config_json = local.sites_dashboard_json[each.key]
 }
+
+resource "grafana_dashboard" "slo" {
+  for_each = local.slo_dashboards
+
+  folder      = grafana_folder.lentago.uid
+  overwrite   = true
+  config_json = local.slo_dashboard_json[each.key]
+}
