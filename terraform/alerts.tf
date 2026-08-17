@@ -622,3 +622,257 @@ resource "grafana_rule_group" "context_ledger" {
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# Site availability SLOs + multi-window, multi-burn-rate alerts (issue #195).
+# See docs/adr/0008-site-availability-slos-and-burn-rate-alerts.md.
+#
+# WHY this is a distinct group from "Site probe alerts" above: those rules are
+# SYMPTOM alerts — "probe_success == 0 right now" — which page on every blip,
+# including a 30-second lab-WAN hiccup that consumes a trivial slice of the
+# month's budget. These rules are OBJECTIVE alerts: they page only when the
+# rate of failure is fast enough to threaten the monthly error budget, and
+# ticket when slow erosion is eating it. The symptom rules answer "is it down?";
+# these answer "do we need to care?" Both are kept — a hard-down still pages via
+# the group above; this group adds budget-aware routing on top.
+#
+# THE SLO. 99.9% availability, measured as the fraction of successful outside-in
+# blackbox probes over a rolling 30-day window. 99.9% is the honest target for a
+# free-tier, homelab-fronted lab: the probe path crosses a residential WAN, a
+# Proxmox LXC, and Grafana Cloud's free tier, none of which carry a four-nines
+# guarantee — claiming 99.99% (52 min/YEAR) would be theatre when a single
+# 5-minute home-internet blip already blows a year of that budget. 99.9% over
+# 30 days = 43.2 minutes of allowed downtime per window, which is defensible:
+# achievable on this infrastructure yet tight enough that a real regression
+# shows up as budget burn rather than noise. The 30-day window matches the
+# Google SRE Workbook's canonical burn-rate table (from which the 14.4 / 3
+# multipliers below are derived) so the numbers are directly comparable to the
+# published reference rather than re-derived for a bespoke window.
+#
+# NO NEW SERIES. Burn rate is computed inline with avg_over_time() at
+# evaluation time — there are no recording rules, so this adds ZERO active
+# series to Mimir (the stack runs ~9k of the 15k free-tier cap). Grafana-managed
+# alert rules evaluate in Grafana's engine and are not remote-written back to
+# Mimir either. See the PR body for the series-impact note.
+#
+# no_data_state = "NoData", identical to the "Site probe alerts" group and for
+# the same LAN-vantage reason: a single-vantage probe can't tell a real outage
+# from a lab/WAN outage, so suppressing NoData (→ "OK") would silence a genuine
+# site outage that coincides with a lab outage. The failure mode stays noise,
+# never silence.
+locals {
+  slo_availability_target = 0.999 # 99.9%
+  slo_window_days         = 30    # rolling measurement window; error budget = 43.2 min / 30d
+
+  # 1 - target, hardcoded (not `1 - 0.999`) to keep the generated PromQL a clean
+  # `/ 0.001` rather than a float-noisy `/ 0.0009999999999999998`. Burn rate is
+  # then (failed-probe fraction over the window) / 0.001, so a burn rate of 1
+  # exhausts the whole 30-day budget in exactly 30 days, 14.4 in ~50 hours.
+  slo_error_budget_fraction = 0.001
+
+  # THREE PUBLIC SITES ONLY (issue #195). essexcrossingatmontserrat.com is
+  # deliberately excluded even though it has a probe: it shares pondviewlane's
+  # ECS service (different domain_name, one service — see locals.tf), so its
+  # availability is not an independent objective. The claytonia queue SLO is
+  # tracked separately in issue #200 and is explicitly out of scope here.
+  slo_sites = [
+    "lentago.dev",
+    "icecreamtofightwith.com",
+    "pondviewlane.com",
+  ]
+
+  # Multi-window, multi-burn-rate pair per site (Google SRE Workbook, "Alerting
+  # on SLOs" § multiwindow, multi-burn-rate alerts). Each alert combines a LONG
+  # window (the burn-rate condition) AND a SHORT window (confirms the burn is
+  # STILL happening) — both must exceed the threshold to fire. The short window
+  # is what gives fast reset: without it, an alert triggered by the long window
+  # stays lit for the whole long window after the incident ends. Fewer, better
+  # alerts is the whole point, so we ship exactly two tiers, not the workbook's
+  # full four:
+  #
+  #   fast burn (PAGE):   14.4x over 1h, confirmed over 5m  → burns 2% of the
+  #                       30-day budget in the 1h window. Page-worthy: at this
+  #                       rate the entire month's budget is gone in ~50h.
+  #   slow burn (TICKET):  3x over 24h, confirmed over 2h   → burns 10% of the
+  #                       budget over the 24h window. Ticket-worthy: slow
+  #                       erosion, not an emergency, but it will exhaust the
+  #                       budget this month if left unattended.
+  #
+  # Thresholds are `gt` on the burn rate (unlike the site-down rules' `lt` on
+  # the raw probe value). Windows are capped at 24h — a 3-day avg_over_time is a
+  # heavy Mimir range query for a marginal gain, and 3x/24h is the workbook's
+  # own alternative ticket tier, so nothing is lost.
+  slo_burn_alerts = flatten([
+    for domain in local.slo_sites : [
+      {
+        key             = "${domain}-fast-burn"
+        domain          = domain
+        name            = "SLO fast burn (page) — ${domain}"
+        long_window     = "1h"
+        short_window    = "5m"
+        long_seconds    = 3600
+        burn_threshold  = 14.4
+        for             = "2m" # brief persistence guard; the 5m short window already suppresses single-scrape blips
+        severity        = "critical"
+        repeat_interval = "1h"
+        # Runbook line: exhausting the budget at this rate empties the whole
+        # 30-day allowance in ~50h. Confirm a real outage (not a lab/WAN blip)
+        # via the site dashboard's probe panels, then treat as a live incident.
+        summary = "Fast SLO burn on ${domain}: failed-probe rate is >14.4x the 99.9%/30d budget over both 1h and 5m. At this rate the full monthly error budget (43.2 min) is gone in ~50h — respond now. Runbook: check the site dashboard (/d/site-${replace(domain, ".", "-")}) to rule out a lab/WAN-only outage, then escalate as a live incident."
+      },
+      {
+        key             = "${domain}-slow-burn"
+        domain          = domain
+        name            = "SLO slow burn (ticket) — ${domain}"
+        long_window     = "24h"
+        short_window    = "2h"
+        long_seconds    = 86400
+        burn_threshold  = 3
+        for             = "15m" # slow signal; a longer guard avoids ticketing on a transient 2h bump
+        severity        = "warning"
+        repeat_interval = "12h"
+        # Runbook line: not an emergency, but the budget is eroding faster than
+        # the month can absorb. Open a ticket and investigate the recurring
+        # failures during business hours.
+        summary = "Slow SLO burn on ${domain}: failed-probe rate is >3x the 99.9%/30d budget over both 24h and 2h — ~10% of the monthly error budget consumed in a day. Not paging, but the budget will exhaust this month if unaddressed. Runbook: open a ticket, review the site dashboard (/d/site-${replace(domain, ".", "-")}) burn-rate panel for the failure pattern."
+      },
+    ]
+  ])
+}
+
+# One rule group for the six SLO burn-rate rules (2 per site x 3 sites). Same
+# folder and per-rule routing model as the three groups above.
+resource "grafana_rule_group" "site_slo_burn" {
+  name             = "Site SLO burn rate"
+  folder_uid       = grafana_folder.lentago.uid
+  interval_seconds = 60
+
+  dynamic "rule" {
+    for_each = { for r in local.slo_burn_alerts : r.key => r }
+
+    content {
+      name = rule.value.name
+      for  = rule.value.for
+
+      condition      = "C"
+      no_data_state  = "NoData" # see block comment: single-vantage probe, keep failure mode = noise
+      exec_err_state = "Error"
+
+      # A: burn rate over the LONG window. Burn rate = (1 - availability) / budget
+      # fraction, where availability = avg_over_time(probe_success[w]) (the 0/1
+      # gauge averaged over the window). Kept as a real value (not filtered to
+      # empty) so "healthy" reads as ~0, not NoData.
+      data {
+        ref_id         = "A"
+        datasource_uid = "grafanacloud-prom"
+
+        relative_time_range {
+          from = rule.value.long_seconds
+          to   = 0
+        }
+
+        model = jsonencode({
+          refId         = "A"
+          instant       = true
+          range         = false
+          editorMode    = "code"
+          expr          = "(1 - avg_over_time(probe_success{job=\"integrations/blackbox/${rule.value.domain}\"}[${rule.value.long_window}])) / ${local.slo_error_budget_fraction}"
+          intervalMs    = 1000
+          maxDataPoints = 43200
+          datasource = {
+            type = "prometheus"
+            uid  = "grafanacloud-prom"
+          }
+        })
+      }
+
+      # B: burn rate over the SHORT window — the "still happening" confirmation
+      # that gives the alert a fast reset once the incident clears.
+      data {
+        ref_id         = "B"
+        datasource_uid = "grafanacloud-prom"
+
+        relative_time_range {
+          from = rule.value.long_seconds
+          to   = 0
+        }
+
+        model = jsonencode({
+          refId         = "B"
+          instant       = true
+          range         = false
+          editorMode    = "code"
+          expr          = "(1 - avg_over_time(probe_success{job=\"integrations/blackbox/${rule.value.domain}\"}[${rule.value.short_window}])) / ${local.slo_error_budget_fraction}"
+          intervalMs    = 1000
+          maxDataPoints = 43200
+          datasource = {
+            type = "prometheus"
+            uid  = "grafanacloud-prom"
+          }
+        })
+      }
+
+      # C: fire only when BOTH windows exceed the burn threshold. Two classic
+      # conditions AND-ed together IS the multi-window mechanism — the long
+      # window sets sensitivity, the short window forces a fast reset.
+      data {
+        ref_id         = "C"
+        datasource_uid = "__expr__"
+
+        relative_time_range {
+          from = 0
+          to   = 0
+        }
+
+        model = jsonencode({
+          refId = "C"
+          type  = "classic_conditions"
+          datasource = {
+            type = "__expr__"
+            uid  = "__expr__"
+          }
+          conditions = [
+            {
+              type = "query"
+              evaluator = {
+                type   = "gt"
+                params = [rule.value.burn_threshold]
+              }
+              operator = { type = "and" }
+              query    = { params = ["A"] }
+              reducer  = { type = "last", params = [] }
+            },
+            {
+              type = "query"
+              evaluator = {
+                type   = "gt"
+                params = [rule.value.burn_threshold]
+              }
+              operator = { type = "and" }
+              query    = { params = ["B"] }
+              reducer  = { type = "last", params = [] }
+            },
+          ]
+        })
+      }
+
+      # Reuse the single existing contact point — same as every other group in
+      # this file. Per-rule routing only, so the root notification policy tree
+      # stays untouched. Page tier re-notifies hourly, ticket tier every 12h.
+      notification_settings {
+        contact_point   = grafana_contact_point.site_alerts_email.name
+        repeat_interval = rule.value.repeat_interval
+      }
+
+      labels = {
+        service  = "site-slo"
+        domain   = rule.value.domain
+        severity = rule.value.severity
+      }
+
+      annotations = {
+        summary = rule.value.summary
+      }
+    }
+  }
+}

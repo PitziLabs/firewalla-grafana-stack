@@ -185,10 +185,12 @@ look for `device_inventory` gaps (below) and for the metrics pipeline.
 ## Alerting
 
 Terraform provisions the stack's alerting end to end —
-[`terraform/alerts.tf`](terraform/alerts.tf): **20 rules** across three rule
+[`terraform/alerts.tf`](terraform/alerts.tf): **26 rules** across four rule
 groups in the `Lentago` folder, plus the stack's first contact point. See
 [docs/adr/0001-grafana-native-alerting-for-site-probes.md](docs/adr/0001-grafana-native-alerting-for-site-probes.md)
-for why this lives in Grafana instead of AWS.
+for why this lives in Grafana instead of AWS, and
+[docs/adr/0008-site-availability-slos-and-burn-rate-alerts.md](docs/adr/0008-site-availability-slos-and-burn-rate-alerts.md)
+for the SLO targets and burn-rate design.
 
 - **`Site probe alerts`** (8 rules — "Site down" on `probe_success` and "TLS
   cert expiring" on `probe_ssl_earliest_cert_expiry` under a 21-day threshold,
@@ -217,8 +219,19 @@ for why this lives in Grafana instead of AWS.
   severity — it means the snapshot guard caught secret-shaped content in a
   host's context. `claude_version` is deliberately never alerted on
   (known-broken on workers, claytonia#89).
+- **`Site SLO burn rate`** (6 rules, issue #195 — a fast/slow pair for each of
+  the three public sites: lentago.dev, icecreamtofightwith.com,
+  pondviewlane.com). These are *objective* alerts, not symptom alerts: they fire
+  on how fast the **99.9% / rolling-30d** availability error budget (43.2
+  min/30d) is being consumed. Each is multi-window (Google SRE Workbook) — a
+  long window sets sensitivity, a short window forces a fast reset. **Fast burn
+  pages** at ≥14.4× (1h ∧ 5m; budget gone in ~50h); **slow burn tickets** at
+  ≥3× (24h ∧ 2h). Burn rate is computed inline with `avg_over_time` — no
+  recording rules, zero new Mimir series. `no_data_state = "NoData"` as with the
+  probe group (same single-vantage reason). Operator view:
+  the **Sites — SLOs & Error Budget** dashboard (uid `sites-slo-error-budget`).
 - **Contact point:** one email contact point (`Site probe email`), reused by
-  all three groups. The recipient is `TF_VAR_alert_email`, a sensitive
+  all four groups. The recipient is `TF_VAR_alert_email`, a sensitive
   Terraform variable with no default, supplied via CI/`.envrc` and never
   committed (this is a public repo). Routing is scoped per-rule, so it doesn't
   touch the stack's root notification policy.

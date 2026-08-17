@@ -174,3 +174,34 @@ locals {
     )
   }
 }
+
+# SLO / error-budget dashboard (issue #195) — a cross-site aggregate, not a
+# per-site board, so it lives in its own map rather than sites_dashboards (whose
+# entries are one-per-public-site, uid = site-<domain>). All-Mimir probe panels,
+# so it takes the same datasource-UID rewrite as the lab/site sets. Its uid
+# (sites-slo-error-budget) is the alerting group's dashboard counterpart.
+locals {
+  slo_dashboards = {
+    site_slo = {
+      uid  = "sites-slo-error-budget"
+      file = "sites-slo-error-budget.json"
+    }
+  }
+
+  slo_dashboard_json = {
+    for k, d in local.slo_dashboards :
+    k => replace(
+      replace(
+        replace(
+          file("${local.dashboards_dir}/${d.file}"),
+          "/\"uid\":\\s*\"loki\"/",
+          "\"uid\": \"${local.datasource_uid_rewrites["loki"]}\""
+        ),
+        "/\"uid\":\\s*\"prometheus\"/",
+        "\"uid\": \"${local.datasource_uid_rewrites["prometheus"]}\""
+      ),
+      "/\"uid\":\\s*\"infinity\"/",
+      "\"uid\": \"${local.datasource_uid_rewrites["infinity"]}\""
+    )
+  }
+}
