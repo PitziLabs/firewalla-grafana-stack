@@ -83,7 +83,15 @@ jobs:
   plan:
     needs: [changes, validate]
     runs-on: ubuntu-latest
-    if: needs.changes.outputs.tf == 'true' && github.event_name == 'pull_request'
+    # Dependabot PRs draw from a separate read-only secrets store; GRAFANA_URL
+    # and GRAFANA_AUTH resolve empty there, so the Verify Grafana Cloud secrets
+    # preflight fails by design. A dependency bump never needs to plan against
+    # live Grafana — skipped counts as pass for the gate fan-in. Same pattern
+    # as kalmia/claytonia (Sprint 0, kalmia#115/claytonia#105).
+    if: >-
+      needs.changes.outputs.tf == 'true' &&
+      github.event_name == 'pull_request' &&
+      github.actor != 'dependabot[bot]'
     defaults:
       run:
         working-directory: terraform
