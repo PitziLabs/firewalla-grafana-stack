@@ -1,0 +1,95 @@
+name: status-page
+
+# Regenerate the estate status page (status-page/) on a schedule and publish it
+# to GitHub Pages. See status-page/README.md and issue #196.
+#
+# The page degrades gracefully: if the Mimir query or a GitHub call fails at
+# build time, the affected item renders an explicit "no data" state — never a
+# fake green — and the rest of the page still deploys.
+
+on:
+  schedule:
+    # Every 30 minutes. The availability query is a rolling-30d average, so a
+    # tighter cadence buys little; 30m keeps the page fresh without hammering
+    # Mimir or the GitHub API.
+    - cron: "*/30 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - "status-page/**"
+      - ".github/workflows/status-page.yml"
+  workflow_dispatch:
+
+# Pages deploy needs pages:write + id-token:write; the build reads this repo's
+# and other public fleet repos' Actions status with the default token.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Serialize deploys so a scheduled run and a push-triggered rebuild can't race
+# onto Pages. Don't cancel an in-flight deploy (GitHub's recommended Pages
+# setting) — builds are sub-minute, so queueing rather than cancelling is fine.
+concurrency:
+  group: status-page
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Mimir query auth. Preferred: a dedicated, read-only query endpoint
+      # (MIMIR_QUERY_ENDPOINT + MIMIR_QUERY_TOKEN). Fallback: reuse the existing
+      # terraform Grafana secrets via the datasource proxy. The build picks
+      # whichever pair is set (see status-page/build.py resolve_prom_backend).
+      MIMIR_QUERY_ENDPOINT: ${{ secrets.MIMIR_QUERY_ENDPOINT }}
+      MIMIR_QUERY_TOKEN: ${{ secrets.MIMIR_QUERY_TOKEN }}
+      GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+      GRAFANA_AUTH: ${{ secrets.GRAFANA_AUTH }}
+      # Public-repo Actions reads; avoids anonymous rate limits.
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # Fail fast on a missing Mimir credential, mirroring lentago/.github's
+      # terraform.yml FLEET_ADMIN_TOKEN preflight. A run with NO metrics
+      # credential at all would silently publish an all-"no data" availability
+      # section, which looks like a bug rather than a setup step — so stop and
+      # tell the operator exactly what to set. (Note: a credential that is set
+      # but transiently fails at query time still degrades gracefully to
+      # "no data" — this only catches the never-configured case.)
+      - name: Verify a Mimir query credential is configured
+        run: |
+          if { [ -n "${MIMIR_QUERY_ENDPOINT:-}" ] && [ -n "${MIMIR_QUERY_TOKEN:-}" ]; } || \
+             { [ -n "${GRAFANA_URL:-}" ] && [ -n "${GRAFANA_AUTH:-}" ]; }; then
+            echo "Mimir query credential present."
+          else
+            echo "::error::No Mimir query credential configured. Set repository secrets"
+            echo "::error::MIMIR_QUERY_ENDPOINT + MIMIR_QUERY_TOKEN (a read-only Grafana Cloud"
+            echo "::error::Prometheus query endpoint + access-policy token, scope metrics:read),"
+            echo "::error::OR reuse the existing GRAFANA_URL + GRAFANA_AUTH secrets. See"
+            echo "::error::status-page/README.md § Secrets. Both pairs were empty in this run."
+            exit 1
+          fi
+
+      - name: Build status page
+        run: python3 status-page/build.py --config status-page/config/estate.toml --out status-page/public
+
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: status-page/public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
