@@ -661,9 +661,6 @@ resource "grafana_rule_group" "context_ledger" {
 # site outage that coincides with a lab outage. The failure mode stays noise,
 # never silence.
 locals {
-  slo_availability_target = 0.999 # 99.9%
-  slo_window_days         = 30    # rolling measurement window; error budget = 43.2 min / 30d
-
   # 1 - target, hardcoded (not `1 - 0.999`) to keep the generated PromQL a clean
   # `/ 0.001` rather than a float-noisy `/ 0.0009999999999999998`. Burn rate is
   # then (failed-probe fraction over the window) / 0.001, so a burn rate of 1
