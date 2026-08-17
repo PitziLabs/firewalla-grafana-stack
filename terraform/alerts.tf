@@ -921,58 +921,22 @@ resource "grafana_rule_group" "site_slo_burn" {
 # Grafana's engine — zero remote-written series, same as the ingest-absence
 # and context-ledger groups.
 locals {
-  # The bullpen is a known-size pool: claude-runner, -2, -3, -4, -5 on pve4
-  # (README § "Fleet reasoning stream"). Adding/removing a worker is a
-  # one-line change here.
-  bullpen_expected_workers = 5
+  # ── HELD: worker-headcount rules (below-strength ticket + fully-dark page) ──
+  # Live verification (2026-08-17, reviewer) confirmed the PR's own caveat is
+  # disqualifying: `event="job_running"` marks BUSY workers, not alive ones.
+  # Over a 3h window the headcount correctly returned 5, but over the rules'
+  # 15m window an idle-but-healthy fleet reads as 1 (or 0) — the below-strength
+  # ticket would fire on every quiet stretch and the fully-dark rule would PAGE
+  # nightly (no_data_state = Alerting on an empty result). Held until claytonia
+  # ships the queue's existing 30s `workers/<host>.alive` heartbeat into the
+  # {job="claude_runner"} stream (claytonia#110); then both rules land with the
+  # alive selector and none of this ambiguity:
+  #   bullpen_expected_workers  = 5
+  #   count(max by (worker) (count_over_time({job="claude_runner"} | json | event="worker_alive" [5m]) > bool 0))
+  # The retry rule below has no busy-vs-alive dependency and ships now.
 
-  # Distinct active (busy) workers — EXACTLY the fleet dashboard's liveness
-  # inner expression, aggregated to a headcount. `| json` promotes every field
-  # to a label, so `max by (worker)(... > bool 0)` collapses back to one series
-  # per worker (value 1 if it heartbeated at all in the window); `count()` then
-  # yields the number of distinct workers. 15m window: job_running fires ~every
-  # 15s while busy, so 15m is generous coverage for a worker briefly between
-  # jobs — long enough that a healthy busy fleet accumulates all five, short
-  # enough that a dead worker drops out within window + `for`.
-  bullpen_active_workers_expr = "count(max by (worker) (count_over_time({job=\"claude_runner\"} | json | event=\"job_running\" [15m]) > bool 0))"
 
   bullpen_rules = [
-    {
-      key  = "workers-degraded"
-      name = "Bullpen workers below full strength"
-      # 1–4 distinct active workers → partial capacity loss → ticket. A FULLY
-      # dark fleet returns an EMPTY Loki result (count over no series = NoData,
-      # not a literal 0); that case is escalated by the page rule below, so
-      # here no_data_state = "OK" — it prevents this ticket from double-firing
-      # alongside the page when the fleet is completely dark.
-      expr            = local.bullpen_active_workers_expr
-      from_seconds    = 900
-      evaluator_type  = "lt"
-      threshold       = local.bullpen_expected_workers # < 5
-      for             = "5m"                           # the issue's ">5m" persistence
-      no_data_state   = "OK"
-      severity        = "warning"
-      repeat_interval = "12h"
-      summary         = "Fewer than 5 distinct bullpen workers have emitted a job_running heartbeat for 5m — the fleet is running below full strength (a worker died and the reaper hasn't been noticed, OR the fleet is legitimately low-load; see the busy-vs-alive caveat in terraform/alerts.tf). Check the Claytonia — Runner Fleet dashboard (/d/claude-runner-fleet) 'Offload — concurrent runs' panel, then `pct start` any stopped runner LXC on pve4."
-    },
-    {
-      key  = "workers-dark"
-      name = "Bullpen fully dark — no active workers"
-      # Zero active workers is the betula#86 "queue fully dark" shape applied to
-      # the bullpen. It surfaces as an EMPTY Loki result (NoData), NOT a literal
-      # 0 — so no_data_state = "Alerting" IS THE CRUX here, exactly like the
-      # ingest-absence group. The `lt 1` threshold on C is the belt to that
-      # suspenders for the rare case the query does reduce to a literal 0.
-      expr            = local.bullpen_active_workers_expr
-      from_seconds    = 900
-      evaluator_type  = "lt"
-      threshold       = 1     # == 0 active
-      for             = "10m" # longer guard than the ticket: a page must not fire on a brief lull
-      no_data_state   = "Alerting"
-      severity        = "critical"
-      repeat_interval = "1h"
-      summary         = "NO bullpen worker has emitted a job_running heartbeat for 10m — the runner fleet appears fully dark. Either every worker on pve4 is down (check the LXCs 113/114/115/116/117 and `pct start`) or ingest from the fleet has stopped. NOTE: an extended legitimate idle period can also trip this until an always-on worker heartbeat lands (claytonia) — see terraform/alerts.tf. Cross-check the Claytonia — Runner Fleet dashboard before treating as an incident."
-    },
     {
       key  = "retry-requeue"
       name = "Bullpen job requeued (.retry)"

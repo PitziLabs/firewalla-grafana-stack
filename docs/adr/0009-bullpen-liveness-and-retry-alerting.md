@@ -107,3 +107,16 @@ Loki credentials, so the queries are unproven against live data):
   the 15k cap, for a signal Loki already carries.
 - **Page on `< 5` instead of `== 0`.** Rejected: too noisy given the busy-only
   signal; `< 5` tickets, `== 0` pages, keeping the page for genuine darkness.
+
+## Amendment (2026-08-17, review)
+
+Live verification against Loki confirmed the busy-vs-alive caveat is
+disqualifying for the two headcount rules: over the 15m rule window an
+idle-but-healthy fleet reads as 1 (or 0) busy workers, so the below-strength
+ticket fires on every quiet stretch and the fully-dark rule (no_data_state =
+Alerting) would page nightly. Both are **held** — parked as comments in
+alerts.tf — until claytonia ships the queue's `workers/<host>.alive` heartbeat
+into the {job="claude_runner"} stream (claytonia#110), after which they land on
+an `event="worker_alive"` selector. The retry rule shipped immediately: its
+selector was verified against the game-day's own `.retry` telemetry (14
+matching lines in the 3h window).
