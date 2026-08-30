@@ -73,6 +73,25 @@ prometheus.exporter.blackbox "default" {
     module  = "icmp"
   }
   target {
+    name    = "pve3"
+    address = "192.168.139.55"
+    module  = "icmp"
+  }
+  target {
+    name    = "pve4"
+    address = "192.168.139.210"
+    module  = "icmp"
+  }
+  // pve5 hosts the LXC 105 Alloy that runs this prober, so probing it is very
+  // nearly tautological — the probe can only ever report pve5 down while the
+  // prober is still up to report anything at all. Included anyway so the
+  // per-host reachability set is uniform (every Proxmox node has one target).
+  target {
+    name    = "pve5"
+    address = "192.168.139.230"
+    module  = "icmp"
+  }
+  target {
     name    = "neptune"
     address = "192.168.139.6"
     module  = "icmp"
