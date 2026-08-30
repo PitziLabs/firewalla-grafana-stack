@@ -1067,3 +1067,232 @@ resource "grafana_rule_group" "bullpen_liveness" {
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# Lab availability alerts (issue: 2026-08-29 pve3 outage post-mortem).
+#
+# WHY: on 2026-08-29 18:55 EDT pve3's onboard Intel I219-V NIC hit an e1000e TX
+# unit hang. The PHY link stayed UP while transmit died, so the host was
+# islanded for 17 HOURS, taking Home Assistant (VM 100 / HAOS, USB-pinned to
+# pve3 and unable to migrate) off the LAN with it — and nobody was paged. This
+# was NOT a monitoring gap: probe_success{job="integrations/blackbox/
+# homeassistant-http"} sat at 0 continuously from 2026-08-29T23:00Z to
+# 2026-08-30T16:00Z. It was an ALERTING gap — before this group, every rule in
+# this file covered the public sites, Loki ingest, context-ledger, or the
+# bullpen, and NOTHING watched lab host or Home Assistant availability. These
+# rules close that gap; rule (a) alone would have caught the outage in 5 minutes.
+#
+# TWO INDEPENDENT VANTAGES, DELIBERATELY (rules b and c are belt-and-braces):
+#   (b) outside-in ICMP pull — the LXC 105 blackbox prober pings the host; the
+#       series dies when the host/NIC/LAN path between prober and host is down.
+#   (c) inside-out metrics push — the host's own Alloy scrapes localhost:9100
+#       and remote_writes `up`; the series dies when the host's Alloy stops,
+#       even if ICMP still answers.
+# They fail INDEPENDENTLY: a NIC TX hang (this outage) kills both, but a hung
+# Alloy agent kills only (c), and a prober/LXC-105 fault kills only (b). Keeping
+# both means a single-path failure still surfaces exactly which path broke.
+#
+# THE absent_over_time() CRUX (rule c) — do NOT "simplify" this to `up == 0`.
+# node_exporter here is host-local PUSH: every host runs its own Alloy that
+# scrapes localhost and remote_writes to Mimir (README § "central pull vs.
+# host-local push"). When a host dies or is islanded, its `up` series goes
+# ABSENT — it never reports 0, because the thing that would emit the 0 is the
+# very agent that died. Verified against the real outage window:
+# up{job="node",instance="pve3"} simply STOPS at 2026-08-29T23:00Z and resumes
+# at 2026-08-30T16:30Z, with no zero samples in between. An `up == 0` rule would
+# NEVER have fired. absent_over_time(up[10m]) returns 1 exactly when the series
+# has been missing for the whole window, which is the condition we need.
+#
+# no_data_state VARIES per rule kind — re-derived from each query's shape, not
+# copied:
+#   * rules (a)/(b) query the raw probe_success gauge (0 down / 1 up) and fire on
+#     `lt 1`. NoData means the single-vantage probe returned nothing, an
+#     ambiguous lab/WAN-vs-target failure — so no_data_state = "NoData", exactly
+#     as the "Site probe alerts" group above, keeping the failure mode noise not
+#     silence.
+#   * rule (c) uses absent_over_time, which returns EMPTY (→ NoData) precisely
+#     when the host is HEALTHY (the `up` series is present, so it is not absent).
+#     Here NoData is the normal, good case, so no_data_state = "OK" — the exact
+#     opposite of the Loki-ingest-absence group, and getting it backwards would
+#     make every healthy host page constantly.
+locals {
+  # Rule (b) — outside-in ICMP reachability. Every host here has a blackbox ICMP
+  # target in alloy/config.alloy, so its metrics carry job="integrations/
+  # blackbox/<host>" (verified live label shape). severity: pve3 is CRITICAL
+  # because it is the single point of failure — HAOS (VM 100) is USB-pinned to it
+  # and cannot migrate, so pve3 down = Home Assistant down (this outage). neptune
+  # (the NAS) is CRITICAL too; the rest are warning. The address is carried only
+  # to put a concrete "ping this IP" first step in the summary.
+  lab_reachability_hosts = [
+    { host = "pve", address = "192.168.139.8", severity = "warning" },
+    { host = "pve2", address = "192.168.139.7", severity = "warning" },
+    { host = "pve3", address = "192.168.139.55", severity = "critical" },
+    { host = "pve4", address = "192.168.139.210", severity = "warning" },
+    { host = "pve5", address = "192.168.139.230", severity = "warning" },
+    { host = "neptune", address = "192.168.139.6", severity = "critical" },
+    { host = "firewalla", address = "192.168.139.1", severity = "warning" },
+  ]
+
+  # Rule (c) — inside-out node_exporter push. ONLY the six hosts that run a
+  # host-local Alloy (neptune + the five Proxmox nodes) emit up{job="node",
+  # instance=<host>}; firewalla and ap-office run no Alloy and so are absent here
+  # by design — an absent_over_time rule on a series that never exists would fire
+  # forever.
+  lab_node_hosts = ["pve", "pve2", "pve3", "pve4", "pve5", "neptune"]
+
+  # All three rule kinds share one flat schema (key/name/expr/from_seconds/
+  # evaluator_type/threshold/for/no_data_state/severity/repeat_interval/summary)
+  # so a single dynamic "rule" block fans them all out, exactly as the
+  # context-ledger and bullpen groups above do.
+  lab_availability_rules = concat(
+    [
+      {
+        # Rule (a) — the one that would have caught the 2026-08-29 outage in 5m.
+        key             = "homeassistant-unreachable"
+        name            = "Home Assistant unreachable"
+        expr            = "probe_success{job=\"integrations/blackbox/homeassistant-http\"}"
+        from_seconds    = 600
+        evaluator_type  = "lt" # probe_success is 0 (down) / 1 (up); `lt 1` == "== 0"
+        threshold       = 1
+        for             = "5m"
+        no_data_state   = "NoData" # single-vantage probe: NoData is ambiguous, not "healthy"
+        severity        = "critical"
+        repeat_interval = "1h"
+        summary         = "Home Assistant is unreachable — the outside-in HTTP probe (probe_success, job integrations/blackbox/homeassistant-http) has read 0 for 5m. This is the exact signal that sat at 0 for 17 hours during the 2026-08-29 pve3 NIC (e1000e TX hang) outage with nobody paged. First diagnostic: check whether pve3 itself is up (see 'Lab host unreachable — pve3'). If pve3 is up but HA is down, the HAOS VM or its network is the fault; if pve3 is down, fix the host first — HAOS (VM 100) is USB-pinned to pve3 and cannot migrate."
+      },
+    ],
+    [
+      for h in local.lab_reachability_hosts : {
+        key             = "host-unreachable-${h.host}"
+        name            = "Lab host unreachable — ${h.host}"
+        expr            = "probe_success{job=\"integrations/blackbox/${h.host}\"}"
+        from_seconds    = 600
+        evaluator_type  = "lt"
+        threshold       = 1
+        for             = "5m"
+        no_data_state   = "NoData"
+        severity        = h.severity
+        repeat_interval = h.severity == "critical" ? "1h" : "4h"
+        summary         = "Lab host ${h.host} is unreachable — the outside-in ICMP probe (probe_success, job integrations/blackbox/${h.host}) has read 0 for 5m from the LXC 105 vantage. Something between the prober and the host is down: the host itself, its NIC, or the LAN path. First diagnostic: ping ${h.host} (${h.address}) from another host and check its console. This is the outside-in half of a belt-and-braces pair — the inside-out 'Host metrics silent — ${h.host}' rule fails independently, so if only one of the two fires, suspect the probe/scrape path rather than the host."
+      }
+    ],
+    [
+      for host in local.lab_node_hosts : {
+        key  = "host-metrics-silent-${host}"
+        name = "Host metrics silent — ${host}"
+        # absent_over_time, NOT `up == 0` — see the block comment. Host-local
+        # push means a dead host's `up` series goes ABSENT, never 0; verified
+        # against the 2026-08-29 pve3 window (series stopped, no zero samples).
+        expr            = "absent_over_time(up{job=\"node\", instance=\"${host}\"}[10m])"
+        from_seconds    = 600  # must cover the [10m] range in the expr
+        evaluator_type  = "gt" # absent_over_time returns 1 when absent; fire on `gt 0`
+        threshold       = 0
+        for             = "10m"
+        no_data_state   = "OK" # EMPTY result == series present == host healthy; do not flip to "Alerting"
+        severity        = "warning"
+        repeat_interval = "4h"
+        summary         = "Host ${host}'s node_exporter metrics have stopped arriving in Mimir — up{job=\"node\", instance=\"${host}\"} has been ABSENT (not 0) for 10m. node_exporter here is host-local push: ${host}'s own Alloy scrapes localhost and remote_writes, so a dead or islanded host makes the series vanish rather than report 0 (verified: during the 2026-08-29 pve3 outage the series simply stopped, with no zero samples). First diagnostic: is the host reachable (see 'Lab host unreachable — ${host}')? If reachable, its Alloy agent is the fault — `systemctl status alloy` on ${host}; if unreachable, fix the host. This is the inside-out half of a belt-and-braces pair with the ICMP reachability rule; they fail independently."
+      }
+    ],
+  )
+}
+
+# One rule group for all lab-availability rules. Same folder, contact point, and
+# per-rule routing model as the five groups above. The per-rule
+# evaluator_type/threshold/no_data_state/severity/repeat_interval A+C shape is
+# the context-ledger / bullpen template reused verbatim (all queries hit Mimir,
+# so datasource_uid is hardcoded grafanacloud-prom like the site_probes group).
+resource "grafana_rule_group" "lab_availability" {
+  name             = "Lab availability"
+  folder_uid       = grafana_folder.lentago.uid
+  interval_seconds = 60
+
+  dynamic "rule" {
+    for_each = { for r in local.lab_availability_rules : r.key => r }
+
+    content {
+      name           = rule.value.name
+      for            = rule.value.for
+      condition      = "C"
+      no_data_state  = rule.value.no_data_state
+      exec_err_state = "Error"
+
+      # A: the raw Mimir query — probe_success gauge (rules a/b) or
+      # absent_over_time(up) (rule c). Kept as a real value, not filtered to
+      # empty, so "healthy" reads as a value (a/b) or genuine NoData (c) rather
+      # than masquerading as the other.
+      data {
+        ref_id         = "A"
+        datasource_uid = "grafanacloud-prom"
+
+        relative_time_range {
+          from = rule.value.from_seconds
+          to   = 0
+        }
+
+        model = jsonencode({
+          refId         = "A"
+          instant       = true
+          range         = false
+          editorMode    = "code"
+          expr          = rule.value.expr
+          intervalMs    = 1000
+          maxDataPoints = 43200
+          datasource = {
+            type = "prometheus"
+            uid  = "grafanacloud-prom"
+          }
+        })
+      }
+
+      # C: threshold on A. evaluator_type varies per rule (lt for the probe
+      # rules, gt for the absent_over_time rule) — same per-rule comparator
+      # pattern as the context-ledger and bullpen groups.
+      data {
+        ref_id         = "C"
+        datasource_uid = "__expr__"
+
+        relative_time_range {
+          from = 0
+          to   = 0
+        }
+
+        model = jsonencode({
+          refId = "C"
+          type  = "classic_conditions"
+          datasource = {
+            type = "__expr__"
+            uid  = "__expr__"
+          }
+          conditions = [{
+            type = "query"
+            evaluator = {
+              type   = rule.value.evaluator_type
+              params = [rule.value.threshold]
+            }
+            operator = { type = "and" }
+            query    = { params = ["A"] }
+            reducer  = { type = "last", params = [] }
+          }]
+        })
+      }
+
+      # Reuse the stack's single contact point — every group in this file does.
+      # Per-rule routing only; the root notification policy stays untouched.
+      # Critical tiers re-notify hourly, warnings every 4h.
+      notification_settings {
+        contact_point   = grafana_contact_point.site_alerts_email.name
+        repeat_interval = rule.value.repeat_interval
+      }
+
+      labels = {
+        service  = "lab-availability"
+        severity = rule.value.severity
+      }
+
+      annotations = {
+        summary = rule.value.summary
+      }
+    }
+  }
+}
